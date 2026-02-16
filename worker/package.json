@@ -1,0 +1,14 @@
+{
+  "name": "bus-bunching-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx --tsconfig ./tsconfig.json ./src/index.ts",
+    "gtfs:import": "tsx --tsconfig ./tsconfig.json ./src/gtfsImporter.ts",
+    "sync:run": "tsx --tsconfig ./tsconfig.json ./src/busTrackerSync.ts",
+    "poller:run": "tsx --tsconfig ./tsconfig.json ./src/busTrackerPoller.ts",
+    "arrivals:run": "tsx --tsconfig ./tsconfig.json ./src/arrivalsProcessor.ts",
+    "headways:run": "tsx --tsconfig ./tsconfig.json ./src/headwayProcessor.ts",
+    "enrich:run": "tsx --tsconfig ./tsconfig.json ./src/enrichJob.ts"
+  }
+}
