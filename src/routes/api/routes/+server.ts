@@ -1,26 +1,26 @@
-import { json } from '@sveltejs/kit';
-import type { RequestHandler } from './$types';
-import { query } from '$server/db';
+import { json } from '@sveltejs/kit'
+import type { RequestHandler } from './$types'
+import { query } from '$server/db'
 
 export const GET: RequestHandler = async ({ url }) => {
-  const serviceId = url.searchParams.get('service_id');
-  const bucket = url.searchParams.get('time_of_day_bucket');
+	const serviceId = url.searchParams.get('service_id')
+	const bucket = url.searchParams.get('time_of_day_bucket')
 
-  const filters: string[] = [];
-  const params: unknown[] = [];
+	const filters: string[] = []
+	const params: unknown[] = []
 
-  if (serviceId) {
-    params.push(serviceId);
-    filters.push(`rbs.service_id = $${params.length}`);
-  }
-  if (bucket) {
-    params.push(bucket);
-    filters.push(`rbs.time_of_day_bucket = $${params.length}`);
-  }
+	if (serviceId) {
+		params.push(serviceId)
+		filters.push(`rbs.service_id = $${params.length}`)
+	}
+	if (bucket) {
+		params.push(bucket)
+		filters.push(`rbs.time_of_day_bucket = $${params.length}`)
+	}
 
-  const whereSql = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
+	const whereSql = filters.length ? `WHERE ${filters.join(' AND ')}` : ''
 
-  const sql = `
+	const sql = `
     SELECT
       r.route_id,
       r.route_short_name,
@@ -38,8 +38,8 @@ export const GET: RequestHandler = async ({ url }) => {
     ${whereSql}
     GROUP BY r.route_id, r.route_short_name, r.route_long_name
     ORDER BY bunching_rate DESC NULLS LAST, r.route_short_name
-  `;
+  `
 
-  const result = await query(sql, params);
-  return json(result.rows);
-};
+	const result = await query(sql, params)
+	return json(result.rows)
+}

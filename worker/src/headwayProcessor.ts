@@ -1,27 +1,27 @@
-import { fileURLToPath } from 'node:url';
-import { query } from './db';
+import { fileURLToPath } from 'node:url'
+import { query } from './db'
 
 const getWatermark = async () => {
-  const result = await query<{ watermark: Date | null }>(
-    `select watermark from job_state where id = 'headways_processor'`
-  );
-  return result.rows[0]?.watermark ?? null;
-};
+	const result = await query<{ watermark: Date | null }>(
+		`select watermark from job_state where id = 'headways_processor'`
+	)
+	return result.rows[0]?.watermark ?? null
+}
 
 const setWatermark = async (watermark: Date) => {
-  await query(
-    `insert into job_state (id, watermark)
+	await query(
+		`insert into job_state (id, watermark)
      values ('headways_processor', $1)
      on conflict (id) do update set watermark = excluded.watermark`,
-    [watermark]
-  );
-};
+		[watermark]
+	)
+}
 
 export const runHeadways = async () => {
-  const watermark = await getWatermark();
+	const watermark = await getWatermark()
 
-  await query(
-    `with ordered as (
+	await query(
+		`with ordered as (
       select
         route_id,
         direction_id,
@@ -61,26 +61,26 @@ export const runHeadways = async () => {
     where o.prev_time is not null
       and o.arrival_time > coalesce($1, '1970-01-01'::timestamptz)
     on conflict do nothing`,
-    [watermark]
-  );
+		[watermark]
+	)
 
-  const maxResult = await query<{ max_time: Date | null }>(
-    `select max(arrival_time) as max_time from stop_arrivals`
-  );
-  const maxTime = maxResult.rows[0]?.max_time ?? null;
-  if (maxTime) {
-    await setWatermark(maxTime);
-  }
-};
+	const maxResult = await query<{ max_time: Date | null }>(
+		`select max(arrival_time) as max_time from stop_arrivals`
+	)
+	const maxTime = maxResult.rows[0]?.max_time ?? null
+	if (maxTime) {
+		await setWatermark(maxTime)
+	}
+}
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  runHeadways()
-    .then(() => {
-      console.log('Headways processed');
-      process.exit(0);
-    })
-    .catch((error) => {
-      console.error('Headways processing failed', error);
-      process.exit(1);
-    });
+	runHeadways()
+		.then(() => {
+			console.log('Headways processed')
+			process.exit(0)
+		})
+		.catch((error) => {
+			console.error('Headways processing failed', error)
+			process.exit(1)
+		})
 }

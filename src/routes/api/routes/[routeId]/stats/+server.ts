@@ -1,21 +1,21 @@
-import { json } from '@sveltejs/kit';
-import type { RequestHandler } from './$types';
-import { query } from '$server/db';
+import { json } from '@sveltejs/kit'
+import type { RequestHandler } from './$types'
+import { query } from '$server/db'
 
 export const GET: RequestHandler = async ({ params, url }) => {
-  const routeId = params.routeId;
-  const serviceId = url.searchParams.get('service_id');
+	const routeId = params.routeId
+	const serviceId = url.searchParams.get('service_id')
 
-  const baseParams: unknown[] = [routeId];
-  const serviceFilter = serviceId ? `AND service_id = $2` : '';
-  if (serviceId) baseParams.push(serviceId);
+	const baseParams: unknown[] = [routeId]
+	const serviceFilter = serviceId ? `AND service_id = $2` : ''
+	if (serviceId) baseParams.push(serviceId)
 
-  const routeResult = await query(
-    `SELECT route_id, route_short_name, route_long_name FROM gtfs_routes WHERE route_id = $1`,
-    [routeId]
-  );
+	const routeResult = await query(
+		`SELECT route_id, route_short_name, route_long_name FROM gtfs_routes WHERE route_id = $1`,
+		[routeId]
+	)
 
-  const summarySql = `
+	const summarySql = `
     SELECT
       SUM(total_headways)::int AS total_headways,
       SUM(bunched_headways)::int AS bunched_headways,
@@ -29,25 +29,25 @@ export const GET: RequestHandler = async ({ params, url }) => {
     FROM route_bunching_stats
     WHERE route_id = $1
     ${serviceFilter}
-  `;
+  `
 
-  const bucketsSql = `
+	const bucketsSql = `
     SELECT time_of_day_bucket, AVG(bunching_rate) AS bunching_rate
     FROM route_bunching_stats
     WHERE route_id = $1
     ${serviceFilter}
     GROUP BY time_of_day_bucket
     ORDER BY time_of_day_bucket
-  `;
+  `
 
-  const [summaryResult, bucketsResult] = await Promise.all([
-    query(summarySql, baseParams),
-    query(bucketsSql, baseParams)
-  ]);
+	const [summaryResult, bucketsResult] = await Promise.all([
+		query(summarySql, baseParams),
+		query(bucketsSql, baseParams)
+	])
 
-  return json({
-    route: routeResult.rows[0] ?? null,
-    summary: summaryResult.rows[0] ?? null,
-    buckets: bucketsResult.rows
-  });
-};
+	return json({
+		route: routeResult.rows[0] ?? null,
+		summary: summaryResult.rows[0] ?? null,
+		buckets: bucketsResult.rows
+	})
+}
