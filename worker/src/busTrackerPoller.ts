@@ -31,7 +31,16 @@ type Vehicle = {
 
 type VehiclesResponse = { vehicle?: Vehicle[]; vehicles?: Vehicle[] }
 
-const parseTimestamp = (value: string) => value
+const parseTimestamp = (value: string) => {
+	const trimmed = value?.trim()
+	if (!trimmed) return value
+	const parts = trimmed.split(' ')
+	if (parts.length !== 2) return trimmed
+	const time = parts[1]
+	const colonCount = (time.match(/:/g) ?? []).length
+	if (colonCount === 1) return `${parts[0]} ${time}:00`
+	return trimmed
+}
 
 const loadKnownPatterns = async () => {
 	const result = await query<{ pid: string }>('select pid from bt_patterns')
@@ -58,7 +67,7 @@ const insertVehicles = async (vehicles: Vehicle[]) => {
 	const placeholders = values
 		.map((row, index) => {
 			const offset = index * 10
-			return `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, ST_SetSRID(ST_MakePoint($${offset + 6}, $${offset + 5}), 4326), $${offset + 7}, (to_timestamp($${offset + 8}, 'YYYYMMDD HH24:MI') at time zone 'America/Chicago'), $${offset + 9}, $${offset + 10})`
+			return `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, ST_SetSRID(ST_MakePoint($${offset + 6}, $${offset + 5}), 4326), $${offset + 7}, (to_timestamp($${offset + 8}, 'YYYYMMDD HH24:MI:SS')::timestamp at time zone 'America/Chicago'), $${offset + 9}, $${offset + 10})`
 		})
 		.join(', ')
 
