@@ -3,7 +3,7 @@ import { busTimeRequest } from './busTrackerClient'
 import { query } from './db'
 
 type RouteResponse = { routes: { rt: string; rtnm: string; rtclr?: string }[] }
-type DirectionResponse = { directions: { dir: string }[] }
+type DirectionResponse = { directions: { id: string; name: string }[] }
 type StopResponse = { stops: { stpid: string; stpnm: string; lat: string; lon: string }[] }
 
 type PatternPoint = {
@@ -66,7 +66,7 @@ const upsertStops = async (rt: string, dir: string, stops: StopResponse['stops']
 	)
 }
 
-const upsertPatterns = async (patterns: Pattern[], knownStops: Set<string>) => {
+const upsertPatterns = async (patterns: Pattern[], knownStops: Set<string>, route: string) => {
 	for (const pattern of patterns) {
 		const coords = pattern.pt.map((pt) => `${pt.lon} ${pt.lat}`).join(', ')
 		const wkt = `LINESTRING(${coords})`
@@ -78,7 +78,7 @@ const upsertPatterns = async (patterns: Pattern[], knownStops: Set<string>) => {
          rt = excluded.rt,
          dir = excluded.dir,
          geom = excluded.geom`,
-			[pattern.pid, pattern.rt, pattern.rtdir, wkt]
+			[pattern.pid, route, pattern.rtdir, wkt]
 		)
 
 		const stopPoints = pattern.pt.filter((pt) => pt.stpid && knownStops.has(pt.stpid))
@@ -162,17 +162,17 @@ export const runSync = async () => {
 		for (const direction of directions) {
 			const stopPayload = await busTimeRequest<StopResponse>('getstops', {
 				rt: route.rt,
-				dir: direction.dir
+				dir: direction.name
 			})
 			const stops = stopPayload.stops ?? []
-			await upsertStops(route.rt, direction.dir, stops)
+			await upsertStops(route.rt, direction.name, stops)
 		}
 
 		const patternPayload = await busTimeRequest<PatternResponse>('getpatterns', { rt: route.rt })
 		const patterns = patternPayload.ptr ?? []
 		if (patterns.length) {
 			const knownStops = await loadKnownStops()
-			await upsertPatterns(patterns, knownStops)
+			await upsertPatterns(patterns, knownStops, route.rt)
 		}
 	}
 
