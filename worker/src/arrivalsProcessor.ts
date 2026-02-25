@@ -144,7 +144,7 @@ export const runArrivals = async () => {
 
 		if (
 			nextStop &&
-			state.lastPdist < nextStop.distance_feet &&
+			(state.lastStopIndex === -1 || state.lastPdist < nextStop.distance_feet) &&
 			row.pdist_feet >= nextStop.distance_feet
 		) {
 			const routeId = routeMap.get(row.rt)
