@@ -46,7 +46,7 @@ const insertVehicles = async (vehicles: Vehicle[]) => {
 		v.vid,
 		v.rt,
 		v.des,
-		v.pid && knownPatterns.has(v.pid) ? v.pid : null,
+		v.pid && knownPatterns.has(String(v.pid)) ? v.pid : null,
 		Number(v.lat),
 		Number(v.lon),
 		v.pdist ? Number(v.pdist) : null,
