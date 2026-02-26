@@ -221,6 +221,7 @@ create table if not exists headways_enriched (
   stop_id text,
   segment_id uuid,
   arrival_time timestamptz,
+  time_of_day_bucket text,
   service_id text,
   time_bin_start time,
   actual_headway_min double precision,
