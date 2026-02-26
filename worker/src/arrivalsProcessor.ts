@@ -139,18 +139,12 @@ export const runArrivals = async () => {
 			lastStopIndex: -1
 		}
 
-		const nextIndex = state.lastStopIndex + 1
-		const nextStop = stops[nextIndex]
-
-		if (
-			nextStop &&
-			(state.lastStopIndex === -1 || state.lastPdist < nextStop.distance_feet) &&
-			row.pdist_feet >= nextStop.distance_feet
-		) {
-			const routeId = routeMap.get(row.rt)
+		const routeId = routeMap.get(row.rt)
+		const directionId = directionToId(patternDirs.get(row.pid) ?? null)
+		let nextIndex = state.lastStopIndex + 1
+		while (nextIndex < stops.length && row.pdist_feet >= stops[nextIndex].distance_feet) {
+			const nextStop = stops[nextIndex]
 			if (routeId && nextStop.gtfs_stop_id) {
-				const directionId = directionToId(patternDirs.get(row.pid) ?? null)
-
 				await query(
 					`insert into stop_arrivals (
             route_id, direction_id, stop_id, vid, rt, pid, arrival_time, pdist_feet
@@ -169,6 +163,7 @@ export const runArrivals = async () => {
 			}
 
 			state.lastStopIndex = nextIndex
+			nextIndex += 1
 		}
 
 		state.lastPdist = row.pdist_feet
