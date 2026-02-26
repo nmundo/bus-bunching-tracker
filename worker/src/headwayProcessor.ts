@@ -59,7 +59,6 @@ export const runHeadways = async () => {
       and s.direction_id = o.direction_id
       and s.to_stop_id = o.stop_id
     where o.prev_time is not null
-      and o.arrival_time > coalesce($1, '1970-01-01'::timestamptz)
     on conflict do nothing`,
 		[watermark]
 	)
