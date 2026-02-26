@@ -1,6 +1,7 @@
 import { json } from '@sveltejs/kit'
 import type { RequestHandler } from './$types'
 import { query } from '$server/db'
+import { appendServiceFilter } from '$server/serviceFilter'
 
 type SegmentRow = {
 	segment_id: string
@@ -24,10 +25,12 @@ export const GET: RequestHandler = async ({ params, url }) => {
 	const filters: string[] = ['s.route_id = $1']
 	const paramsList: unknown[] = [routeId]
 
-	if (serviceId) {
-		paramsList.push(serviceId)
-		filters.push(`sbs.service_id = $${paramsList.length}`)
-	}
+	appendServiceFilter({
+		serviceId,
+		serviceIdColumn: 'sbs.service_id',
+		filters,
+		params: paramsList
+	})
 	if (bucket) {
 		paramsList.push(bucket)
 		filters.push(`sbs.time_of_day_bucket = $${paramsList.length}`)

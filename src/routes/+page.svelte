@@ -39,8 +39,13 @@
 		<p>Scan which routes are struggling with bus bunching and drill into the worst segments.</p>
 		<div class="controls">
 			<label>
-				Service ID
-				<input placeholder="WKDY" bind:value={serviceId} />
+				Service type
+				<select bind:value={serviceId}>
+					<option value="">all services</option>
+					<option value="weekday">weekday</option>
+					<option value="saturday">saturday</option>
+					<option value="sunday">sunday</option>
+				</select>
 			</label>
 			<label>
 				Time bucket

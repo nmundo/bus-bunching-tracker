@@ -64,8 +64,13 @@
 
 		<div class="controls" style="margin-top: 16px;">
 			<label>
-				Service ID
-				<input placeholder="WKDY" bind:value={serviceId} />
+				Service type
+				<select bind:value={serviceId}>
+					<option value="">all services</option>
+					<option value="weekday">weekday</option>
+					<option value="saturday">saturday</option>
+					<option value="sunday">sunday</option>
+				</select>
 			</label>
 			<label>
 				Time bucket
