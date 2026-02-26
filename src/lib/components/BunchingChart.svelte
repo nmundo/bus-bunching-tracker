@@ -1,12 +1,9 @@
 <script lang="ts">
-	export type BucketStat = {
-		time_of_day_bucket: string
-		bunching_rate: number | null
-	}
+	import type { BucketStat } from '$lib/types/frontend'
 
-	export let data: BucketStat[] = []
+	let { data = [] }: { data?: BucketStat[] } = $props()
 
-	const maxRate = () => Math.max(0.1, ...data.map((d) => d.bunching_rate ?? 0))
+	const maxRate = $derived(Math.max(0.1, ...data.map((d) => d.bunching_rate ?? 0)))
 </script>
 
 <div class="panel">
@@ -16,9 +13,9 @@
 		{#if data.length === 0}
 			<text x="30" y="110" fill="#6b6259">No stats yet.</text>
 		{:else}
-			{#each data as item, index}
+			{#each data as item, index (item.time_of_day_bucket)}
 				{@const rate = item.bunching_rate ?? 0}
-				{@const barHeight = (rate / maxRate()) * 140}
+				{@const barHeight = (rate / maxRate) * 140}
 				{@const x = 40 + index * 110}
 				<rect {x} y={170 - barHeight} width="70" height={barHeight} fill="#d9412f" rx="8" />
 				<text {x} y="190" font-size="12" fill="#6b6259">{item.time_of_day_bucket}</text>

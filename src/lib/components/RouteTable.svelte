@@ -1,14 +1,7 @@
 <script lang="ts">
-	export type RouteStat = {
-		route_id: string
-		route_short_name: string
-		route_long_name: string | null
-		bunching_rate: number | null
-		total_headways: number | null
-		avg_hw_ratio: number | null
-	}
+	import type { RouteStat } from '$lib/types/frontend'
 
-	export let routes: RouteStat[] = []
+	let { routes = [] }: { routes?: RouteStat[] } = $props()
 
 	const formatPercent = (value: number | null) =>
 		value === null ? '—' : `${(value * 100).toFixed(1)}%`
@@ -31,7 +24,7 @@
 				<td colspan="5">No data yet.</td>
 			</tr>
 		{:else}
-			{#each routes as route}
+			{#each routes as route (route.route_id)}
 				<tr>
 					<td>
 						<a href={`/route/${route.route_id}`}>{route.route_short_name || route.route_id}</a>

@@ -2,6 +2,20 @@ import { json } from '@sveltejs/kit'
 import type { RequestHandler } from './$types'
 import { query } from '$server/db'
 
+type SegmentRow = {
+	segment_id: string
+	route_id: string
+	direction_id: number | null
+	from_stop_id: string | null
+	to_stop_id: string | null
+	from_stop_name: string | null
+	to_stop_name: string | null
+	bunching_rate: number | null
+	total_headways: number | null
+	time_of_day_bucket: string | null
+	geometry: GeoJSON.Geometry
+}
+
 export const GET: RequestHandler = async ({ params, url }) => {
 	const routeId = params.routeId
 	const serviceId = url.searchParams.get('service_id')
@@ -39,7 +53,7 @@ export const GET: RequestHandler = async ({ params, url }) => {
     WHERE ${filters.join(' AND ')}
   `
 
-	const result = await query(sql, paramsList)
+	const result = await query<SegmentRow>(sql, paramsList)
 
 	const features = result.rows.map((row) => ({
 		type: 'Feature',

@@ -2,35 +2,28 @@
 	import BunchingChart from '$components/BunchingChart.svelte'
 	import RouteMap from '$components/RouteMap.svelte'
 	import RouteStatsSummary from '$components/RouteStatsSummary.svelte'
+	import type { PageData } from './$types'
 
-	export let data: {
-		routeId: string
-		stats: {
-			route: {
-				route_id: string
-				route_short_name: string
-				route_long_name: string | null
-			} | null
-			summary: {
-				bunching_rate: number | null
-				total_headways: number | null
-				avg_hw_ratio: number | null
-				median_actual_headway: number | null
-			} | null
-			buckets: { time_of_day_bucket: string; bunching_rate: number | null }[]
-		} | null
-		segments: GeoJSON.FeatureCollection<GeoJSON.LineString> | null
-		serviceId: string
-		bucket: string
+	type Props = {
+		data: PageData
 	}
 
-	let serviceId = data.serviceId
-	let bucket = data.bucket
-	let stats = data.stats
-	let segments = data.segments
-	let loading = false
+	let { data }: Props = $props()
+
+	let serviceId = $state('')
+	let bucket = $state('')
+	let stats = $state<PageData['stats']>(null)
+	let segments = $state<PageData['segments']>(null)
+	let loading = $state(false)
 
 	const timeBuckets = ['AM_peak', 'Midday', 'PM_peak', 'Evening', 'Night']
+
+	$effect(() => {
+		serviceId = data.serviceId
+		bucket = data.bucket
+		stats = data.stats
+		segments = data.segments
+	})
 
 	const refresh = async () => {
 		loading = true
@@ -51,12 +44,12 @@
 		loading = false
 	}
 
-	const worstSegments = () => {
+	const worstSegments = $derived.by(() => {
 		if (!segments) return []
 		return [...segments.features]
 			.sort((a, b) => (b.properties?.bunching_rate ?? 0) - (a.properties?.bunching_rate ?? 0))
 			.slice(0, 8)
-	}
+	})
 </script>
 
 <section class="grid">
@@ -77,12 +70,12 @@
 			<label>
 				Time bucket
 				<select bind:value={bucket}>
-					{#each timeBuckets as option}
+					{#each timeBuckets as option (option)}
 						<option value={option}>{option}</option>
 					{/each}
 				</select>
 			</label>
-			<button on:click={refresh} disabled={loading}>Refresh</button>
+			<button onclick={refresh} disabled={loading}>Refresh</button>
 			{#if loading}
 				<small class="mono">Loading…</small>
 			{/if}
@@ -115,7 +108,7 @@
 						<td colspan="4">No segments loaded.</td>
 					</tr>
 				{:else}
-					{#each worstSegments() as feature}
+					{#each worstSegments as feature, index (feature.properties?.segment_id ?? index)}
 						<tr>
 							<td>{feature.properties?.from_stop_name ?? '—'}</td>
 							<td>{feature.properties?.to_stop_name ?? '—'}</td>

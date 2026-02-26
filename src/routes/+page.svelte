@@ -1,19 +1,26 @@
 <script lang="ts">
 	import RouteTable from '$components/RouteTable.svelte'
-	import type { RouteStat } from '$components/RouteTable.svelte'
+	import type { RouteStat } from '$lib/types/frontend'
+	import type { PageData } from './$types'
 
-	export let data: {
-		routes: RouteStat[]
-		serviceId: string
-		bucket: string
+	type Props = {
+		data: PageData
 	}
 
-	let serviceId = data.serviceId
-	let bucket = data.bucket
-	let routes = data.routes
-	let loading = false
+	let { data }: Props = $props()
+
+	let serviceId = $state('')
+	let bucket = $state('')
+	let routes = $state<RouteStat[]>([])
+	let loading = $state(false)
 
 	const timeBuckets = ['AM_peak', 'Midday', 'PM_peak', 'Evening', 'Night']
+
+	$effect(() => {
+		serviceId = data.serviceId
+		bucket = data.bucket
+		routes = data.routes
+	})
 
 	const refresh = async () => {
 		loading = true
@@ -38,12 +45,12 @@
 			<label>
 				Time bucket
 				<select bind:value={bucket}>
-					{#each timeBuckets as option}
+					{#each timeBuckets as option (option)}
 						<option value={option}>{option}</option>
 					{/each}
 				</select>
 			</label>
-			<button on:click={refresh} disabled={loading}>Refresh</button>
+			<button onclick={refresh} disabled={loading}>Refresh</button>
 			{#if loading}
 				<small class="mono">Loading…</small>
 			{/if}

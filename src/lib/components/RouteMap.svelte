@@ -2,11 +2,15 @@
 	import { onMount } from 'svelte'
 	import maplibregl from 'maplibre-gl'
 
-	export let segmentsGeoJson: GeoJSON.FeatureCollection<GeoJSON.LineString> | null = null
-	export let selectedTimeBucket: string
+	type Props = {
+		segmentsGeoJson?: GeoJSON.FeatureCollection<GeoJSON.LineString> | null
+		selectedTimeBucket: string
+	}
 
-	let mapContainer: HTMLDivElement | null = null
-	let map: maplibregl.Map | null = null
+	let { segmentsGeoJson = null, selectedTimeBucket }: Props = $props()
+
+	let mapContainer = $state<HTMLDivElement | null>(null)
+	let map = $state<maplibregl.Map | null>(null)
 
 	const styleUrl = import.meta.env.VITE_MAP_STYLE_URL ?? 'https://demotiles.maplibre.org/style.json'
 
@@ -93,9 +97,11 @@
 		}
 	})
 
-	$: if (map && segmentsGeoJson) {
-		refreshSource()
-	}
+	$effect(() => {
+		if (map && segmentsGeoJson) {
+			refreshSource()
+		}
+	})
 </script>
 
 <div class="panel">

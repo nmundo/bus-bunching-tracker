@@ -1,10 +1,12 @@
 <script lang="ts">
-	export let summary: {
+	type Summary = {
 		bunching_rate: number | null
 		total_headways: number | null
 		avg_hw_ratio: number | null
 		median_actual_headway: number | null
 	}
+
+	let { summary }: { summary: Summary } = $props()
 
 	const formatPercent = (value: number | null) =>
 		value === null ? '—' : `${(value * 100).toFixed(1)}%`
