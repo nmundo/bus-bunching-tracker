@@ -1,3 +1,5 @@
+@import 'maplibre-gl/dist/maplibre-gl.css';
+
 :root {
 	--bg: #f6f4ef;
 	--bg-accent: #efe9df;
@@ -145,5 +147,3 @@ small.mono {
 	font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, SFMono-Regular, Menlo, monospace;
 	color: var(--muted);
 }
-
-@import 'maplibre-gl/dist/maplibre-gl.css';
