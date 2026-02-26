@@ -113,3 +113,4 @@ npm run test
 - `enrich_headways()`, `refresh_route_bunching_stats()` and `refresh_segment_bunching_stats()` are defined in migrations.
 - `job_state` tracks incremental watermarks for arrivals and headways processing.
 - GTFS import refreshes derived route sequences and segments. If you are running with existing headways, re-run enrichment after import.
+- Busses are considered bunched if they actual headway between them is less than 25% of their scheduled headway, and super bunched if the actual headway is less than a minute
