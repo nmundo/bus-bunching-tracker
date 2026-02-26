@@ -2,6 +2,7 @@
 	import BunchingChart from '$components/BunchingChart.svelte'
 	import RouteMap from '$components/RouteMap.svelte'
 	import RouteStatsSummary from '$components/RouteStatsSummary.svelte'
+	import { classifyRisk, type RiskLevel } from '$lib/ui/networkMetrics'
 	import type { PageData } from './$types'
 
 	type Props = {
@@ -17,6 +18,12 @@
 	let loading = $state(false)
 
 	const timeBuckets = ['AM_peak', 'Midday', 'PM_peak', 'Evening', 'Night']
+	const formatPercent = (value: number | null | undefined) =>
+		value === null || value === undefined ? '—' : `${(value * 100).toFixed(1)}%`
+	const formatHeadways = (value: number | null | undefined) =>
+		value === null || value === undefined ? '—' : value.toLocaleString()
+	const formatBucketLabel = (value: string) => value.replace('_', ' ')
+	const getRiskLevel = (value: number | null | undefined): RiskLevel => classifyRisk(value)
 
 	$effect(() => {
 		serviceId = data.serviceId
@@ -54,17 +61,18 @@
 
 <section class="grid">
 	<div class="panel">
-		<div style="display: flex; justify-content: space-between; align-items: baseline; gap: 16px;">
+		<div class="panel-top">
 			<div>
+				<p class="meta-line">Route focus</p>
 				<h2>{stats?.route?.route_short_name ?? data.routeId}</h2>
 				<p>{stats?.route?.route_long_name ?? 'Route detail'}</p>
 			</div>
 			<div class="badge">Route focus</div>
 		</div>
 
-		<div class="controls" style="margin-top: 16px;">
-			<label>
-				Service type
+		<div class="controls-row">
+			<label class="control-field">
+				<span>Service type</span>
 				<select bind:value={serviceId}>
 					<option value="">all services</option>
 					<option value="weekday">weekday</option>
@@ -72,17 +80,17 @@
 					<option value="sunday">sunday</option>
 				</select>
 			</label>
-			<label>
-				Time bucket
+			<label class="control-field">
+				<span>Time bucket</span>
 				<select bind:value={bucket}>
 					{#each timeBuckets as option (option)}
-						<option value={option}>{option}</option>
+						<option value={option}>{formatBucketLabel(option)}</option>
 					{/each}
 				</select>
 			</label>
 			<button onclick={refresh} disabled={loading}>Refresh</button>
 			{#if loading}
-				<small class="mono">Loading…</small>
+				<small class="mono loading-indicator">Loading…</small>
 			{/if}
 		</div>
 	</div>
@@ -97,32 +105,47 @@
 	</div>
 
 	<div class="panel">
-		<h3>Worst segments</h3>
-		<table class="table">
-			<thead>
-				<tr>
-					<th>From stop</th>
-					<th>To stop</th>
-					<th>Bunching rate</th>
-					<th>Total headways</th>
-				</tr>
-			</thead>
-			<tbody>
-				{#if !segments}
+		<div class="section-head">
+			<div>
+				<p class="meta-line">Segment ranking</p>
+				<h3>Worst segments</h3>
+			</div>
+		</div>
+		<div class="table-wrap">
+			<table class="table">
+				<thead>
 					<tr>
-						<td colspan="4">No segments loaded.</td>
+						<th>From stop</th>
+						<th>To stop</th>
+						<th>Bunching rate</th>
+						<th>Total headways</th>
 					</tr>
-				{:else}
-					{#each worstSegments as feature, index (feature.properties?.segment_id ?? index)}
+				</thead>
+				<tbody>
+					{#if !segments}
 						<tr>
-							<td>{feature.properties?.from_stop_name ?? '—'}</td>
-							<td>{feature.properties?.to_stop_name ?? '—'}</td>
-							<td>{((feature.properties?.bunching_rate ?? 0) * 100).toFixed(1)}%</td>
-							<td>{feature.properties?.total_headways ?? '—'}</td>
+							<td colspan="4" class="table-empty">No segments loaded for these filters.</td>
 						</tr>
-					{/each}
-				{/if}
-			</tbody>
-		</table>
+					{:else}
+						{#each worstSegments as feature, index (feature.properties?.segment_id ?? index)}
+							<tr>
+								<td>{feature.properties?.from_stop_name ?? '—'}</td>
+								<td>{feature.properties?.to_stop_name ?? '—'}</td>
+								<td>
+									{#if feature.properties?.bunching_rate === undefined || feature.properties?.bunching_rate === null}
+										—
+									{:else}
+										<span class={`risk-pill ${getRiskLevel(feature.properties?.bunching_rate)}`}>
+											{formatPercent(feature.properties?.bunching_rate)}
+										</span>
+									{/if}
+								</td>
+								<td>{formatHeadways(feature.properties?.total_headways)}</td>
+							</tr>
+						{/each}
+					{/if}
+				</tbody>
+			</table>
+		</div>
 	</div>
 </section>

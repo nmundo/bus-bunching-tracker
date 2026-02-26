@@ -74,11 +74,11 @@
 						['linear'],
 						['get', 'bunching_rate'],
 						0,
-						'#2a9d8f',
+						'#768396',
 						0.1,
-						'#f2b453',
+						'#4b5563',
 						0.2,
-						'#d9412f'
+						'#b42318'
 					],
 					'line-opacity': 0.85
 				}
@@ -104,10 +104,13 @@
 	})
 </script>
 
-<div class="panel">
-	<div style="display: flex; justify-content: space-between; align-items: baseline;">
-		<h3>Route segments</h3>
-		<small class="mono">{selectedTimeBucket}</small>
+<div class="panel visual-panel">
+	<div class="section-head">
+		<div>
+			<p class="meta-line">Spatial view</p>
+			<h3>Route segments</h3>
+		</div>
+		<small class="mono">{selectedTimeBucket.replace('_', ' ')}</small>
 	</div>
-	<div bind:this={mapContainer} style="height: 420px; border-radius: 16px; overflow: hidden;"></div>
+	<div class="map-shell" bind:this={mapContainer}></div>
 </div>

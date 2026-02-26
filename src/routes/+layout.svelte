@@ -14,7 +14,6 @@
 		<span>CTA performance</span>
 		<h1>Bus Bunching Tracker</h1>
 	</div>
-	<div class="badge">Live analytics</div>
 </header>
 
 <main>
