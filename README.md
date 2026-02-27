@@ -54,7 +54,18 @@ CTA Bus Tracker API base:
 
 ### Vehicle polling
 
-Runs continuously. Configure routes and interval via env vars.
+Runs continuously with dynamic route-tiering:
+- `getvehicles` requests are batched with a hard cap of 10 routes per call.
+- Fast tier routes (recently active) are polled every cycle.
+- Slow tier routes are bucketed and rotated to limit call volume while preserving network coverage.
+
+Key env vars:
+- `CTA_BUS_TRACKER_POLL_INTERVAL_SEC` (default `45`)
+- `CTA_BUS_TRACKER_BATCH_SIZE` (default `6`, capped at `10`)
+- `CTA_BUS_TRACKER_LOW_TIER_MAX_STALENESS_SEC` (default `360`)
+- `CTA_BUS_TRACKER_ACTIVITY_TTL_SEC` (default `360`)
+- `CTA_BUS_TRACKER_ROUTE_REFRESH_SEC` (default `900`)
+- Optional debug override: `CTA_BUS_TRACKER_ROUTES=1,2,3`
 
 ```bash
 npm run poller:run
