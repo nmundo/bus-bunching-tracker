@@ -60,17 +60,10 @@
 </script>
 
 <section class="grid">
-	<div class="panel">
-		<div class="panel-top">
-			<div>
-				<p class="meta-line">Route focus</p>
-				<h2>{stats?.route?.route_short_name ?? data.routeId}</h2>
-				<p>{stats?.route?.route_long_name ?? 'Route detail'}</p>
-			</div>
-			<div class="badge">Route focus</div>
-		</div>
+	<div class="detail-toolbar">
+		<a class="back-link" href="/">← Back to network overview</a>
 
-		<div class="controls-row">
+		<div class="controls-row detail-controls">
 			<label class="control-field">
 				<span>Service type</span>
 				<select bind:value={serviceId}>
@@ -92,6 +85,17 @@
 			{#if loading}
 				<small class="mono loading-indicator">Loading…</small>
 			{/if}
+		</div>
+	</div>
+
+	<div class="panel">
+		<div class="panel-top">
+			<div>
+				<p class="meta-line">Route focus</p>
+				<h2>{stats?.route?.route_short_name ?? data.routeId}</h2>
+				<p>{stats?.route?.route_long_name ?? 'Route detail'}</p>
+			</div>
+			<div class="badge">Route focus</div>
 		</div>
 	</div>
 

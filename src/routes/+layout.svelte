@@ -1,5 +1,7 @@
 <script lang="ts">
 	import '../app.css'
+	import { page } from '$app/stores'
+	import { fade, fly } from 'svelte/transition'
 	import type { LayoutProps } from './$types'
 
 	let { children }: LayoutProps = $props()
@@ -17,5 +19,13 @@
 </header>
 
 <main>
-	{@render children()}
+	{#key $page.url.pathname}
+		<div
+			class="page-transition"
+			in:fly={{ y: 22, duration: 260, opacity: 0.2 }}
+			out:fade={{ duration: 170 }}
+		>
+			{@render children()}
+		</div>
+	{/key}
 </main>

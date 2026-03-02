@@ -110,11 +110,6 @@
 			<h3>{dashboardMetrics.highRiskCount}</h3>
 			<p>Bunching rate at or above 20%</p>
 		</article>
-		<article class="stat-card">
-			<p class="meta-line">Routes with data</p>
-			<h3>{dashboardMetrics.withDataCount}</h3>
-			<p>of {dashboardMetrics.totalRoutes} total routes</p>
-		</article>
 	</div>
 
 	<div class="panel">

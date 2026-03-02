@@ -18,7 +18,7 @@
 				<th>Route</th>
 				<th>Name</th>
 				<th>Bunching rate</th>
-				<th>Total headways</th>
+				<th>Total data points</th>
 				<th>Avg ratio</th>
 			</tr>
 		</thead>
