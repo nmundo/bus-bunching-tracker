@@ -8,6 +8,7 @@ export type RouteStat = {
 }
 
 export type BucketStat = {
-	time_of_day_bucket: string
+	hour_of_day: number
+	total_headways: number
 	bunching_rate: number | null
 }

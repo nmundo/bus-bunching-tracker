@@ -3,6 +3,51 @@ import type { RequestHandler } from './$types'
 import { query } from '$server/db'
 import { appendServiceFilter } from '$server/serviceFilter'
 
+type BuildHourlyBucketsQueryInput = {
+	routeId: string
+	serviceId: string | null
+}
+
+export const _buildHourlyBucketsQuery = ({ routeId, serviceId }: BuildHourlyBucketsQueryInput) => {
+	const filters: string[] = ['he.route_id = $1', "he.arrival_time >= now() - interval '30 day'"]
+	const paramsList: unknown[] = [routeId]
+
+	appendServiceFilter({
+		serviceId,
+		serviceIdColumn: 'he.service_id',
+		filters,
+		params: paramsList
+	})
+
+	const sql = `
+    WITH hours AS (
+      SELECT generate_series(0, 23)::int AS hour_of_day
+    ),
+    hourly AS (
+      SELECT
+        extract(hour from (he.arrival_time at time zone 'America/Chicago'))::int AS hour_of_day,
+        COUNT(*)::int AS total_headways,
+        COUNT(*) FILTER (WHERE he.bunched)::int AS bunched_headways
+      FROM headways_enriched AS he
+      WHERE ${filters.join(' AND ')}
+      GROUP BY 1
+    )
+    SELECT
+      h.hour_of_day,
+      COALESCE(hourly.total_headways, 0)::int AS total_headways,
+      CASE
+        WHEN COALESCE(hourly.total_headways, 0) > 0
+        THEN hourly.bunched_headways::float / hourly.total_headways
+        ELSE NULL
+      END AS bunching_rate
+    FROM hours AS h
+    LEFT JOIN hourly ON hourly.hour_of_day = h.hour_of_day
+    ORDER BY h.hour_of_day
+  `
+
+	return { sql, paramsList }
+}
+
 export const GET: RequestHandler = async ({ params, url }) => {
 	const routeId = params.routeId
 	const serviceId = url.searchParams.get('service_id')
@@ -38,17 +83,14 @@ export const GET: RequestHandler = async ({ params, url }) => {
     ${whereSql}
   `
 
-	const bucketsSql = `
-    SELECT time_of_day_bucket, AVG(bunching_rate) AS bunching_rate
-    FROM route_bunching_stats AS rbs
-    ${whereSql}
-    GROUP BY time_of_day_bucket
-    ORDER BY time_of_day_bucket
-  `
+	const { sql: bucketsSql, paramsList: bucketParams } = _buildHourlyBucketsQuery({
+		routeId,
+		serviceId
+	})
 
 	const [summaryResult, bucketsResult] = await Promise.all([
 		query(summarySql, baseParams),
-		query(bucketsSql, baseParams)
+		query(bucketsSql, bucketParams)
 	])
 
 	return json({

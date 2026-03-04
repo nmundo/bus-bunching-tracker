@@ -419,7 +419,7 @@ input:focus-visible {
 
 .chart-shell svg {
 	display: block;
-	min-width: 620px;
+	min-width: 980px;
 }
 
 .chart-grid {
@@ -431,6 +431,10 @@ input:focus-visible {
 	fill: var(--text-muted);
 	font-size: 11px;
 	font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.chart-axis-tight {
+	font-size: 10px;
 }
 
 .chart-muted {
@@ -448,6 +452,14 @@ input:focus-visible {
 .chart-bar-high {
 	fill: var(--risk-high);
 	opacity: 0.9;
+}
+
+.chart-bar-empty {
+	fill: transparent;
+	stroke: var(--border-strong);
+	stroke-width: 1.5;
+	stroke-dasharray: 4 3;
+	opacity: 0.85;
 }
 
 .chart-value {
@@ -577,7 +589,7 @@ small.mono {
 	}
 
 	.chart-shell svg {
-		min-width: 560px;
+		min-width: 920px;
 	}
 }
 

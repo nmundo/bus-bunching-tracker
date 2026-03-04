@@ -104,52 +104,52 @@
 	{/if}
 
 	<div class="grid two">
-		<BunchingChart data={stats?.buckets ?? []} />
+		<div class="panel">
+			<div class="section-head">
+				<div>
+					<p class="meta-line">Segment ranking</p>
+					<h3>Worst segments</h3>
+				</div>
+			</div>
+			<div class="table-wrap">
+				<table class="table">
+					<thead>
+						<tr>
+							<th>From stop</th>
+							<th>To stop</th>
+							<th>Bunching rate</th>
+							<th>Total headways</th>
+						</tr>
+					</thead>
+					<tbody>
+						{#if !segments}
+							<tr>
+								<td colspan="4" class="table-empty">No segments loaded for these filters.</td>
+							</tr>
+						{:else}
+							{#each worstSegments as feature, index (feature.properties?.segment_id ?? index)}
+								<tr>
+									<td>{feature.properties?.from_stop_name ?? '—'}</td>
+									<td>{feature.properties?.to_stop_name ?? '—'}</td>
+									<td>
+										{#if feature.properties?.bunching_rate === undefined || feature.properties?.bunching_rate === null}
+											—
+										{:else}
+											<span class={`risk-pill ${getRiskLevel(feature.properties?.bunching_rate)}`}>
+												{formatPercent(feature.properties?.bunching_rate)}
+											</span>
+										{/if}
+									</td>
+									<td>{formatHeadways(feature.properties?.total_headways)}</td>
+								</tr>
+							{/each}
+						{/if}
+					</tbody>
+				</table>
+			</div>
+		</div>
 		<RouteMap segmentsGeoJson={segments} selectedTimeBucket={bucket} />
 	</div>
 
-	<div class="panel">
-		<div class="section-head">
-			<div>
-				<p class="meta-line">Segment ranking</p>
-				<h3>Worst segments</h3>
-			</div>
-		</div>
-		<div class="table-wrap">
-			<table class="table">
-				<thead>
-					<tr>
-						<th>From stop</th>
-						<th>To stop</th>
-						<th>Bunching rate</th>
-						<th>Total headways</th>
-					</tr>
-				</thead>
-				<tbody>
-					{#if !segments}
-						<tr>
-							<td colspan="4" class="table-empty">No segments loaded for these filters.</td>
-						</tr>
-					{:else}
-						{#each worstSegments as feature, index (feature.properties?.segment_id ?? index)}
-							<tr>
-								<td>{feature.properties?.from_stop_name ?? '—'}</td>
-								<td>{feature.properties?.to_stop_name ?? '—'}</td>
-								<td>
-									{#if feature.properties?.bunching_rate === undefined || feature.properties?.bunching_rate === null}
-										—
-									{:else}
-										<span class={`risk-pill ${getRiskLevel(feature.properties?.bunching_rate)}`}>
-											{formatPercent(feature.properties?.bunching_rate)}
-										</span>
-									{/if}
-								</td>
-								<td>{formatHeadways(feature.properties?.total_headways)}</td>
-							</tr>
-						{/each}
-					{/if}
-				</tbody>
-			</table>
-		</div>
-	</div>
+	<BunchingChart data={stats?.buckets ?? []} />
 </section>
