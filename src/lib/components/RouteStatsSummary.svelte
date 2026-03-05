@@ -4,6 +4,10 @@
 		total_headways: number | null
 		avg_hw_ratio: number | null
 		median_actual_headway: number | null
+		route: {
+			route_short_name: string | null
+			route_long_name: string | null
+		}
 	}
 
 	let { summary }: { summary: Summary } = $props()
@@ -16,14 +20,17 @@
 
 <div class="kpi-grid">
 	<div class="stat-card">
+		<p class="meta-line">Route</p>
+		<h3>{summary.route?.route_short_name ?? 'Route detail'}</h3>
+		<p>
+			{summary.route?.route_long_name ?? 'Route detail'}
+		</p>
+		<p>Total headways: {formatCount(summary.total_headways)}</p>
+	</div>
+	<div class="stat-card">
 		<p class="meta-line">Bunching rate</p>
 		<h3>{formatPercent(summary.bunching_rate)}</h3>
 		<p>Share of observed headways considered bunched</p>
-	</div>
-	<div class="stat-card">
-		<p class="meta-line">Total headways</p>
-		<h3>{formatCount(summary.total_headways)}</h3>
-		<p>Total measured intervals for this route</p>
 	</div>
 	<div class="stat-card">
 		<p class="meta-line">Avg headway ratio</p>

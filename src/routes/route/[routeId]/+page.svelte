@@ -81,26 +81,15 @@
 					{/each}
 				</select>
 			</label>
-			<button onclick={refresh} disabled={loading}>Refresh</button>
+			<button onclick={refresh} disabled={loading} aria-label="Submit filters">&rarr;</button>
 			{#if loading}
 				<small class="mono loading-indicator">Loading…</small>
 			{/if}
 		</div>
 	</div>
 
-	<div class="panel">
-		<div class="panel-top">
-			<div>
-				<p class="meta-line">Route focus</p>
-				<h2>{stats?.route?.route_short_name ?? data.routeId}</h2>
-				<p>{stats?.route?.route_long_name ?? 'Route detail'}</p>
-			</div>
-			<div class="badge">Route focus</div>
-		</div>
-	</div>
-
 	{#if stats?.summary}
-		<RouteStatsSummary summary={stats.summary} />
+		<RouteStatsSummary summary={{ ...stats.summary, route: stats.route }} />
 	{/if}
 
 	<div class="grid two">

@@ -103,11 +103,10 @@
 </script>
 
 <section class="grid">
-	<div class="panel">
-		<div class="section-head">
+	<div class="kpi-grid">
+		<article class="stat-card">
 			<div>
 				<p class="meta-line">Network overview</p>
-				<h2>Find the routes driving bunching</h2>
 			</div>
 			<div class="controls-row">
 				<label class="control-field">
@@ -127,20 +126,11 @@
 						{/each}
 					</select>
 				</label>
-				<button onclick={refresh} disabled={loading}>Refresh</button>
-				{#if loading}
+				<button onclick={refresh} disabled={loading} aria-label="Submit filters">&rarr;</button>
+				<!-- {#if loading}
 					<small class="mono loading-indicator">Loading…</small>
-				{/if}
+				{/if} -->
 			</div>
-		</div>
-	</div>
-
-	<div class="kpi-grid">
-		<article class="stat-card">
-			<p class="meta-line">Worst route</p>
-			<h3>{dashboardMetrics.worstRouteLabel}</h3>
-			<p>{dashboardMetrics.worstRate} bunching</p>
-			<p class="mono">{dashboardMetrics.worstRouteName}</p>
 		</article>
 		<article class="stat-card">
 			<p class="meta-line">Network avg bunching</p>
