@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { browser } from '$app/environment'
 	import RouteTable from '$components/RouteTable.svelte'
 	import type { RouteStat } from '$lib/types/frontend'
 	import {
@@ -7,6 +8,11 @@
 		countRoutesWithData,
 		getWorstRoute
 	} from '$lib/ui/networkMetrics'
+	import {
+		applyRouteTableFilters,
+		type RouteRiskFilter,
+		withRouteTableFilterParams
+	} from '$lib/ui/routeTableFilters'
 	import type { PageData } from './$types'
 
 	type Props = {
@@ -18,6 +24,9 @@
 	let serviceId = $state('')
 	let bucket = $state('')
 	let routes = $state<RouteStat[]>([])
+	let q = $state('')
+	let risk = $state<RouteRiskFilter>('all')
+	let minData = $state(0)
 	let loading = $state(false)
 
 	const timeBuckets = ['AM_peak', 'Midday', 'PM_peak', 'Evening', 'Night']
@@ -30,6 +39,39 @@
 		serviceId = data.serviceId
 		bucket = data.bucket
 		routes = data.routes
+		q = data.q
+		risk = data.risk
+		minData = data.minData
+	})
+
+	const tableFilters = $derived.by(() => ({
+		q: q.trim(),
+		risk,
+		minData: Number.isFinite(minData) && minData > 0 ? Math.floor(minData) : 0
+	}))
+
+	const visibleRoutes = $derived.by(() => applyRouteTableFilters(routes, tableFilters))
+
+	$effect(() => {
+		if (!browser) {
+			return
+		}
+
+		const next = withRouteTableFilterParams(
+			new URLSearchParams(window.location.search),
+			tableFilters
+		)
+		const nextQuery = next.toString()
+		const currentQuery = window.location.search.replace(/^\?/, '')
+
+		if (nextQuery === currentQuery) {
+			return
+		}
+
+		const nextUrl = nextQuery
+			? `${window.location.pathname}?${nextQuery}`
+			: window.location.pathname
+		window.history.replaceState(window.history.state, '', nextUrl)
 	})
 
 	const dashboardMetrics = $derived.by(() => {
@@ -67,29 +109,29 @@
 				<p class="meta-line">Network overview</p>
 				<h2>Find the routes driving bunching</h2>
 			</div>
-		</div>
-		<div class="controls-row">
-			<label class="control-field">
-				<span>Service type</span>
-				<select bind:value={serviceId}>
-					<option value="">all services</option>
-					<option value="weekday">weekday</option>
-					<option value="saturday">saturday</option>
-					<option value="sunday">sunday</option>
-				</select>
-			</label>
-			<label class="control-field">
-				<span>Time bucket</span>
-				<select bind:value={bucket}>
-					{#each timeBuckets as option (option)}
-						<option value={option}>{formatBucketLabel(option)}</option>
-					{/each}
-				</select>
-			</label>
-			<button onclick={refresh} disabled={loading}>Refresh</button>
-			{#if loading}
-				<small class="mono loading-indicator">Loading…</small>
-			{/if}
+			<div class="controls-row">
+				<label class="control-field">
+					<span>Service type</span>
+					<select bind:value={serviceId}>
+						<option value="">all services</option>
+						<option value="weekday">weekday</option>
+						<option value="saturday">saturday</option>
+						<option value="sunday">sunday</option>
+					</select>
+				</label>
+				<label class="control-field">
+					<span>Time bucket</span>
+					<select bind:value={bucket}>
+						{#each timeBuckets as option (option)}
+							<option value={option}>{formatBucketLabel(option)}</option>
+						{/each}
+					</select>
+				</label>
+				<button onclick={refresh} disabled={loading}>Refresh</button>
+				{#if loading}
+					<small class="mono loading-indicator">Loading…</small>
+				{/if}
+			</div>
 		</div>
 	</div>
 
@@ -117,9 +159,30 @@
 			<div>
 				<p class="meta-line">Performance ranking</p>
 				<h3>Route bunching table</h3>
+				<small class="mono">Ordered by bunching rate · {visibleRoutes.length} shown</small>
 			</div>
-			<small class="mono">Ordered by bunching rate</small>
+			<div class="controls-row">
+				<label class="control-field">
+					<span>Search route</span>
+					<input
+						type="search"
+						placeholder="Route number or name"
+						bind:value={q}
+						aria-label="Search routes"
+					/>
+				</label>
+				<label class="control-field">
+					<span>Risk level</span>
+					<select bind:value={risk} aria-label="Filter by risk level">
+						<option value="all">all risk levels</option>
+						<option value="high">high</option>
+						<option value="medium">medium</option>
+						<option value="low">low</option>
+						<option value="unknown">unknown</option>
+					</select>
+				</label>
+			</div>
 		</div>
-		<RouteTable {routes} />
+		<RouteTable routes={visibleRoutes} />
 	</div>
 </section>
