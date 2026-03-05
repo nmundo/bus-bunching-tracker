@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { goto } from '$app/navigation'
 	import type { RouteStat } from '$lib/types/frontend'
 	import { classifyRisk, type RiskLevel } from '$lib/ui/networkMetrics'
 
@@ -31,11 +32,20 @@
 				</tr>
 			{:else}
 				{#each routes as route (route.route_id)}
-					<tr>
+					<tr
+						class="route-row"
+						role="link"
+						tabindex="0"
+						onclick={() => goto(`/route/${route.route_id}`)}
+						onkeydown={(event) => {
+							if (event.key === 'Enter' || event.key === ' ') {
+								event.preventDefault()
+								goto(`/route/${route.route_id}`)
+							}
+						}}
+					>
 						<td>
-							<a class="route-link" href={`/route/${route.route_id}`}>
-								{route.route_short_name || route.route_id}
-							</a>
+							<span class="route-link">{route.route_short_name || route.route_id}</span>
 						</td>
 						<td>{route.route_long_name ?? '—'}</td>
 						<td>

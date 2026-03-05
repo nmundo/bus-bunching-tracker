@@ -338,6 +338,10 @@ input:focus-visible {
 	background: #f8fafc;
 }
 
+.route-row {
+	cursor: pointer;
+}
+
 .table-empty {
 	text-align: center;
 	color: var(--text-muted);
