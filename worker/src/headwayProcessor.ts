@@ -17,11 +17,8 @@ const setWatermark = async (watermark: Date) => {
 	)
 }
 
-export const runHeadways = async () => {
-	const watermark = await getWatermark()
-
-	await query(
-		`with ordered as (
+export const _buildHeadwaysInsertSql = () => `
+    with ordered as (
       select
         route_id,
         direction_id,
@@ -52,16 +49,30 @@ export const runHeadways = async () => {
       o.vid,
       o.arrival_time,
       extract(epoch from (o.arrival_time - o.prev_time)) / 60,
-      s.id
+      seg.id
     from ordered o
-    left join segments s
-      on s.route_id = o.route_id
-      and s.direction_id = o.direction_id
-      and s.to_stop_id = o.stop_id
+    left join lateral (
+      select s.id
+      from segments s
+      where s.route_id = o.route_id
+        and s.to_stop_id = o.stop_id
+      order by
+        case
+          when s.direction_id = o.direction_id then 0
+          when s.direction_id is null then 2
+          else 1
+        end,
+        s.id
+      limit 1
+    ) seg on true
     where o.prev_time is not null
-    on conflict do nothing`,
-		[watermark]
-	)
+    on conflict do nothing
+  `
+
+export const runHeadways = async () => {
+	const watermark = await getWatermark()
+
+	await query(_buildHeadwaysInsertSql(), [watermark])
 
 	const maxResult = await query<{ max_time: Date | null }>(
 		`select max(arrival_time) as max_time from stop_arrivals`
