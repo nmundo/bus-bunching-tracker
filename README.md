@@ -88,6 +88,75 @@ Calls SQL functions to enrich headways and refresh aggregates.
 npm run enrich:run
 ```
 
+## Methodology
+
+### 1. Data collection methodology
+
+1. GTFS static data is imported to establish the planned service baseline (`gtfs_*`, `route_stop_sequences`, `segments`, `scheduled_headways`).
+2. CTA Bus Tracker reference data (`routes`, `stops`, `patterns`) is synced and mapped to GTFS via:
+   - `route_map` (Bus Tracker route code -> GTFS route)
+   - `stop_map` (exact stop ID match first, then nearest-stop spatial match)
+3. Vehicle positions are polled continuously from CTA Bus Tracker and stored in `bus_positions`.
+4. Stop arrivals are inferred from each vehicle's `pdist_feet` progress along its pattern, producing `stop_arrivals`.
+5. Actual headways are computed from consecutive arrivals at each `(route_id, direction_id, stop_id)` and stored in `headways`.
+6. Headways are enriched with schedule context (service/day/time bin) and bunching flags in `headways_enriched`.
+
+### 2. Scheduled and actual headway calculations
+
+- Scheduled headways are precomputed from GTFS stop departure times in 15-minute bins:
+  - Grouping key: `(route_id, direction_id, stop_id, service_id, time_bin_start)`
+  - `scheduled_headway_min = avg(time between consecutive scheduled departures in bin)`
+- Actual headways come from observed arrivals:
+  - Grouping key: `(route_id, direction_id, stop_id)` ordered by `arrival_time`
+  - `actual_headway_min = (curr_arrival_time - prev_arrival_time) / 60`
+
+### 3. Enrichment and classification rules
+
+Each enriched record contains:
+- `hw_ratio = actual_headway_min / scheduled_headway_min`
+- `bunched = actual_headway_min < 0.25 * scheduled_headway_min`
+- `super_bunched = actual_headway_min <= 1.0`
+- `gapped = actual_headway_min > 1.75 * scheduled_headway_min`
+
+Time dimensions are computed in `America/Chicago`:
+- `time_bin_start`: arrival time floored to a 15-minute bin
+- `time_of_day_bucket`:
+  - `AM_peak`: 07:00-09:59
+  - `Midday`: 10:00-14:59
+  - `PM_peak`: 15:00-18:59
+  - `Evening`: 19:00-22:59
+  - `Night`: otherwise
+
+### 4. Aggregate stats and breakdowns
+
+Stats refresh jobs aggregate the most recent 30 days.
+
+Route-level (`route_bunching_stats`), grouped by
+`(route_id, direction_id, service_id, time_of_day_bucket)`:
+- `total_headways = count(*)`
+- `bunched_headways = count(*) where bunched`
+- `super_bunched_headways = count(*) where super_bunched`
+- `bunching_rate = bunched_headways / total_headways`
+- `avg_hw_ratio = avg(hw_ratio)`
+- `median_actual_headway = percentile_cont(0.5)`
+
+Segment-level (`segment_bunching_stats`), grouped by
+`(segment_id, route_id, direction_id, service_id, time_of_day_bucket)`:
+- `total_headways = count(*)`
+- `bunched_headways = count(*) where bunched`
+- `bunching_rate = bunched_headways / total_headways`
+
+### 5. API/UI breakdown behavior
+
+- `GET /api/routes` returns network table metrics by summing route stats and recomputing `bunching_rate` as `SUM(bunched_headways) / SUM(total_headways)`.
+- `GET /api/routes/[routeId]/stats` returns:
+  - route summary metrics
+  - hourly bunching profile (0-23 local hour) from enriched headways
+- `GET /api/routes/[routeId]/segments` returns segment GeoJSON with per-segment bunching metrics.
+- Service filtering supports:
+  - exact `service_id`
+  - `weekday`, `saturday`, `sunday` (derived from `gtfs_calendar`)
+
 ## Worker runtime
 
 For a single long-running worker that polls and schedules jobs:
@@ -124,4 +193,4 @@ npm run test
 - `enrich_headways()`, `refresh_route_bunching_stats()` and `refresh_segment_bunching_stats()` are defined in migrations.
 - `job_state` tracks incremental watermarks for arrivals and headways processing.
 - GTFS import refreshes derived route sequences and segments. If you are running with existing headways, re-run enrichment after import.
-- Busses are considered bunched if they actual headway between them is less than 25% of their scheduled headway, and super bunched if the actual headway is less than a minute
+- Busses are considered bunched if the actual headway between them is less than 25% of their scheduled headway, and super bunched if the actual headway is less than a minute
