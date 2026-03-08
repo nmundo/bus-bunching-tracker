@@ -14,7 +14,8 @@
 		"sync:run": "tsx --tsconfig worker/tsconfig.json worker/src/busTrackerSync.ts",
 		"arrivals:run": "tsx --tsconfig worker/tsconfig.json worker/src/arrivalsProcessor.ts",
 		"headways:run": "tsx --tsconfig worker/tsconfig.json worker/src/headwayProcessor.ts",
-		"enrich:run": "tsx --tsconfig worker/tsconfig.json worker/src/enrichJob.ts"
+		"enrich:run": "tsx --tsconfig worker/tsconfig.json worker/src/enrichJob.ts",
+		"test:sanity": "RUN_DB_TESTS=1 vitest run tests/dataSanity.integration.test.ts"
 	},
 	"dependencies": {
 		"@sveltejs/kit": "^2.6.5",
