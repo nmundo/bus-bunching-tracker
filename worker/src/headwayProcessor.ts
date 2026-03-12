@@ -18,7 +18,25 @@ const setWatermark = async (watermark: Date) => {
 }
 
 export const _buildHeadwaysInsertSql = () => `
-    with ordered as (
+    with deduped as (
+      select route_id, direction_id, stop_id, vid, arrival_time
+      from (
+        select
+          route_id,
+          direction_id,
+          stop_id,
+          vid,
+          arrival_time,
+          row_number() over (
+            partition by route_id, direction_id, stop_id, arrival_time
+            order by vid
+          ) as rn
+        from stop_arrivals
+        where arrival_time >= coalesce($1, '1970-01-01'::timestamptz) - interval '2 hours'
+      ) sub
+      where rn = 1
+    ),
+    ordered as (
       select
         route_id,
         direction_id,
@@ -27,8 +45,7 @@ export const _buildHeadwaysInsertSql = () => `
         arrival_time,
         lag(vid) over w as prev_vid,
         lag(arrival_time) over w as prev_time
-      from stop_arrivals
-      where arrival_time >= coalesce($1, '1970-01-01'::timestamptz) - interval '2 hours'
+      from deduped
       window w as (partition by route_id, direction_id, stop_id order by arrival_time)
     )
     insert into headways (
@@ -66,6 +83,7 @@ export const _buildHeadwaysInsertSql = () => `
       limit 1
     ) seg on true
     where o.prev_time is not null
+      and o.arrival_time > o.prev_time
     on conflict do nothing
   `
 

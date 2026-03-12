@@ -33,7 +33,8 @@ const config = {
 	allSegmentsShareWarnThreshold: parseNumber(process.env.SANITY_ALL_SEGMENTS_SHARE_WARN, 0.3),
 	nullScheduledShareWarnThreshold: parseNumber(process.env.SANITY_NULL_SCHEDULED_SHARE_WARN, 0.25),
 	bunchedShareWarnThreshold: parseNumber(process.env.SANITY_BUNCHED_SHARE_WARN, 0.5),
-	rateTolerance: parseNumber(process.env.SANITY_RATE_TOLERANCE, 1e-6)
+	rateTolerance: parseNumber(process.env.SANITY_RATE_TOLERANCE, 1e-6),
+	zeroHeadwayShareWarnThreshold: parseNumber(process.env.SANITY_ZERO_HEADWAY_SHARE_WARN, 0.05)
 }
 
 const formatRow = (row: SanityRow) =>
@@ -66,7 +67,8 @@ describe('data sanity integration checks', () => {
 					config.allSegmentsShareWarnThreshold,
 					config.nullScheduledShareWarnThreshold,
 					config.bunchedShareWarnThreshold,
-					config.rateTolerance
+					config.rateTolerance,
+					config.zeroHeadwayShareWarnThreshold
 				])
 
 				expect(result.rows.length).toBeGreaterThan(0)
@@ -74,9 +76,7 @@ describe('data sanity integration checks', () => {
 				const failingHardChecks = result.rows.filter(
 					(row) => row.severity === 'fail' && !row.passed
 				)
-				const warningChecks = result.rows.filter(
-					(row) => row.severity === 'warn' && !row.passed
-				)
+				const warningChecks = result.rows.filter((row) => row.severity === 'warn' && !row.passed)
 
 				if (warningChecks.length > 0) {
 					console.warn('[sanity-check warnings]')

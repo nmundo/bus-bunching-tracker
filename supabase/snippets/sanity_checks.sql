@@ -6,7 +6,8 @@ with params as (
     greatest($4::double precision, 0.0) as all_segments_groups_warn_threshold,
     greatest($5::double precision, 0.0) as null_scheduled_warn_threshold,
     greatest($6::double precision, 0.0) as bunched_warn_threshold,
-    greatest($7::double precision, 0.0) as rate_tolerance
+    greatest($7::double precision, 0.0) as rate_tolerance,
+    greatest($8::double precision, 0.0) as zero_headway_share_warn_threshold
 ),
 window_headways as (
   select h.*
@@ -305,6 +306,13 @@ bunched_share_warn as (
     count(*) filter (where bunched)::bigint as bunched_rows,
     coalesce(avg((bunched)::int), 0.0)::double precision as bunched_share
   from window_enriched
+),
+zero_headway_share as (
+  select
+    count(*)::bigint as total_rows,
+    count(*) filter (where headway_min = 0)::bigint as zero_headway_rows,
+    coalesce(avg(case when headway_min = 0 then 1.0 else 0.0 end), 0.0)::double precision as zero_headway_share
+  from window_headways
 )
 select
   'headways_enriched_missing_headway_id'::text as check_name,
@@ -424,5 +432,20 @@ select
     'bunched_rows', b.bunched_rows
   ) as details_json
 from bunched_share_warn b
+
+union all
+
+select
+  'zero_headway_share'::text as check_name,
+  'warn'::text as severity,
+  (z.zero_headway_share <= (select zero_headway_share_warn_threshold from params)) as passed,
+  z.zero_headway_share as metric_value,
+  (select zero_headway_share_warn_threshold from params) as threshold,
+  jsonb_build_object(
+    'window_days', (select window_days from params),
+    'window_rows', z.total_rows,
+    'zero_headway_rows', z.zero_headway_rows
+  ) as details_json
+from zero_headway_share z
 
 order by severity, check_name;

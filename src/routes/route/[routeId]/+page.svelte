@@ -82,9 +82,6 @@
 				</select>
 			</label>
 			<button onclick={refresh} disabled={loading} aria-label="Submit filters">&rarr;</button>
-			{#if loading}
-				<small class="mono loading-indicator">Loading…</small>
-			{/if}
 		</div>
 	</div>
 
