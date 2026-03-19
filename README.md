@@ -180,6 +180,35 @@ Start the SvelteKit dev server:
 npm run dev
 ```
 
+## Vercel deployment
+
+The SvelteKit app can be deployed to Vercel. The long-running ingestion worker cannot, because it relies on cron scheduling plus a continuous poller loop.
+
+### 1. Use the Vercel adapter
+
+This repo is configured for `@sveltejs/adapter-vercel`, so `npm run build` will produce a Vercel deployment build.
+
+### 2. Set Vercel environment variables
+
+For the web app, set these in the Vercel project:
+
+- `DATABASE_URL`
+  - Use Supabase's pooled serverless connection string, not a direct database connection string.
+- `PUBLIC_SUPABASE_URL` and `PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+  - Optional for this repo today, since the browser does not talk to Supabase directly.
+
+### 3. Use server routes for database access
+
+The frontend should continue to call SvelteKit API routes under `src/routes/api/**`. Database access stays on the server through `src/lib/server/db.ts`, so secrets are not bundled into client-side code.
+
+### 4. Keep the worker on a separate host
+
+Run the worker somewhere else that supports long-lived Node processes:
+
+```bash
+npm run worker:dev
+```
+
 ## Testing
 
 Unit tests for headway computation and bunching classification:
