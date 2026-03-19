@@ -173,6 +173,6 @@
 				</label>
 			</div>
 		</div>
-		<RouteTable routes={visibleRoutes} />
+		<RouteTable routes={visibleRoutes} {serviceId} {bucket} />
 	</div>
 </section>

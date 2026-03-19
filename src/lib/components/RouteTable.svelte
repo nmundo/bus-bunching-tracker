@@ -1,15 +1,25 @@
 <script lang="ts">
 	import { goto } from '$app/navigation'
 	import type { RouteStat } from '$lib/types/frontend'
+	import { buildRouteDetailHref } from '$lib/ui/routeDetailUrl'
 	import { classifyRisk, type RiskLevel } from '$lib/ui/networkMetrics'
 
-	let { routes = [] }: { routes?: RouteStat[] } = $props()
+	let {
+		routes = [],
+		serviceId = '',
+		bucket = ''
+	}: {
+		routes?: RouteStat[]
+		serviceId?: string
+		bucket?: string
+	} = $props()
 
 	const formatPercent = (value: number | null) =>
 		value === null ? '—' : `${(value * 100).toFixed(1)}%`
 	const formatNumber = (value: number | null) => (value === null ? '—' : value.toFixed(2))
 	const formatHeadways = (value: number | null) => (value === null ? '—' : value.toLocaleString())
 	const getRiskLevel = (value: number | null): RiskLevel => classifyRisk(value)
+	const getRouteHref = (routeId: string) => buildRouteDetailHref(routeId, { serviceId, bucket })
 </script>
 
 <div class="table-wrap">
@@ -36,11 +46,11 @@
 						class="route-row"
 						role="link"
 						tabindex="0"
-						onclick={() => goto(`/route/${route.route_id}`)}
+						onclick={() => goto(getRouteHref(route.route_id))}
 						onkeydown={(event) => {
 							if (event.key === 'Enter' || event.key === ' ') {
 								event.preventDefault()
-								goto(`/route/${route.route_id}`)
+								goto(getRouteHref(route.route_id))
 							}
 						}}
 					>

@@ -1,7 +1,9 @@
 <script lang="ts">
+	import { browser } from '$app/environment'
 	import BunchingChart from '$components/BunchingChart.svelte'
 	import RouteMap from '$components/RouteMap.svelte'
 	import RouteStatsSummary from '$components/RouteStatsSummary.svelte'
+	import { withRouteDetailFilterParams } from '$lib/ui/routeDetailUrl'
 	import { classifyRisk, type RiskLevel } from '$lib/ui/networkMetrics'
 	import type { PageData } from './$types'
 
@@ -30,6 +32,28 @@
 		bucket = data.bucket
 		stats = data.stats
 		segments = data.segments
+	})
+
+	$effect(() => {
+		if (!browser) {
+			return
+		}
+
+		const next = withRouteDetailFilterParams(new URLSearchParams(window.location.search), {
+			serviceId,
+			bucket
+		})
+		const nextQuery = next.toString()
+		const currentQuery = window.location.search.replace(/^\?/, '')
+
+		if (nextQuery === currentQuery) {
+			return
+		}
+
+		const nextUrl = nextQuery
+			? `${window.location.pathname}?${nextQuery}`
+			: window.location.pathname
+		window.history.replaceState(window.history.state, '', nextUrl)
 	})
 
 	const refresh = async () => {
