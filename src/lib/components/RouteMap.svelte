@@ -101,7 +101,7 @@
 				type: 'raster',
 				source: streetGridSourceId,
 				paint: {
-					'raster-opacity': 0.56,
+					'raster-opacity': 1,
 					'raster-saturation': -0.55,
 					'raster-brightness-min': 0.15,
 					'raster-brightness-max': 0.95,
