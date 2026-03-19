@@ -91,13 +91,13 @@ header.site-header {
 	align-items: center;
 	padding: 8px 14px;
 	border-radius: 999px;
-	border: 1px solid var(--border);
-	background: var(--surface-2);
+	border: 1px solid #facc15;
+	background: #fef3c7;
 	font-size: 12px;
 	font-weight: 600;
 	letter-spacing: 0.08em;
 	text-transform: uppercase;
-	color: var(--text-muted);
+	color: #854d0e;
 }
 
 .panel {
@@ -182,7 +182,7 @@ header.site-header {
 .control-field {
 	display: grid;
 	gap: 6px;
-	min-width: 180px;
+	min-width: 140px;
 }
 
 .control-field span {
@@ -217,7 +217,9 @@ select {
 	background-position:
 		calc(100% - 16px) calc(50% + 1px),
 		calc(100% - 11px) calc(50% + 1px);
-	background-size: 5px 5px, 5px 5px;
+	background-size:
+		5px 5px,
+		5px 5px;
 	background-repeat: no-repeat;
 }
 
