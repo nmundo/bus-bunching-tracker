@@ -68,14 +68,13 @@ describe('route stats summary query builder', () => {
 
 		expect(paramsList).toEqual(['22'])
 		expect(sql).toContain('SUM(rbs.total_headways)::int AS total_headways')
+		expect(sql).toContain('AVG(rbs.median_scheduled_headway) AS median_scheduled_headway')
 		expect(sql).toContain('AVG(rbs.median_actual_headway) AS median_actual_headway')
-		expect(sql).toContain(
-			'percentile_cont(0.5) within group (order by he.scheduled_headway_min)'
-		)
+		expect(sql).not.toContain('FROM headways_enriched AS he')
 		expect(sql).not.toContain('rbs.time_of_day_bucket =')
 	})
 
-	it('adds the bucket filter to both aggregate and median scheduled headway queries', () => {
+	it('adds the bucket filter to the summary query', () => {
 		const { sql, paramsList } = _buildSummaryQuery({
 			routeId: '22',
 			serviceId: null,
@@ -84,9 +83,6 @@ describe('route stats summary query builder', () => {
 
 		expect(paramsList).toEqual(['22', 'AM_peak'])
 		expect(sql).toContain('rbs.time_of_day_bucket = $2')
-		expect(sql).toContain(
-			'coalesce(he.time_of_day_bucket, time_of_day_bucket(he.arrival_time)) = $2'
-		)
 	})
 
 	it('applies weekday service filters without changing parameter order', () => {
@@ -98,12 +94,8 @@ describe('route stats summary query builder', () => {
 
 		expect(paramsList).toEqual(['22', 'AM_peak'])
 		expect(sql).toContain('gc.service_id = rbs.service_id')
-		expect(sql).toContain('gc.service_id = he.service_id')
 		expect(sql).toContain('gc.monday = 1')
 		expect(sql).toContain('rbs.time_of_day_bucket = $2')
-		expect(sql).toContain(
-			'coalesce(he.time_of_day_bucket, time_of_day_bucket(he.arrival_time)) = $2'
-		)
 	})
 
 	it('adds a custom service ID before the bucket parameter', () => {
@@ -115,10 +107,6 @@ describe('route stats summary query builder', () => {
 
 		expect(paramsList).toEqual(['22', 'special_service', 'PM_peak'])
 		expect(sql).toContain('rbs.service_id = $2')
-		expect(sql).toContain('he.service_id = $2')
 		expect(sql).toContain('rbs.time_of_day_bucket = $3')
-		expect(sql).toContain(
-			'coalesce(he.time_of_day_bucket, time_of_day_bucket(he.arrival_time)) = $3'
-		)
 	})
 })

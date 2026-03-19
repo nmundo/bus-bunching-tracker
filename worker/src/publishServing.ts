@@ -117,6 +117,7 @@ export const runPublishServing = async () => {
           super_bunched_headways,
           bunching_rate,
           avg_hw_ratio,
+          median_scheduled_headway,
           median_actual_headway
         from route_bunching_stats
       `
@@ -215,6 +216,7 @@ export const runPublishServing = async () => {
 					'super_bunched_headways',
 					'bunching_rate',
 					'avg_hw_ratio',
+					'median_scheduled_headway',
 					'median_actual_headway'
 				],
 				rows: routeStats.rows
