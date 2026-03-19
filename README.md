@@ -138,6 +138,7 @@ Route-level (`route_bunching_stats`), grouped by
 - `super_bunched_headways = count(*) where super_bunched`
 - `bunching_rate = bunched_headways / total_headways`
 - `avg_hw_ratio = avg(hw_ratio)`
+- `median_scheduled_headway = percentile_cont(0.5)` over `scheduled_headway_min`
 - `median_actual_headway = percentile_cont(0.5)`
 
 Segment-level (`segment_bunching_stats`), grouped by

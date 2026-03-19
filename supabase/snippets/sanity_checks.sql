@@ -58,6 +58,7 @@ recomputed_route_stats as (
     count(*) filter (where he.super_bunched)::integer as super_bunched_headways,
     avg((he.bunched)::int)::double precision as bunching_rate,
     avg(he.hw_ratio)::double precision as avg_hw_ratio,
+    percentile_cont(0.5) within group (order by he.scheduled_headway_min) as median_scheduled_headway,
     percentile_cont(0.5) within group (order by he.actual_headway_min) as median_actual_headway
   from stats_window_enriched he
   group by
@@ -82,6 +83,8 @@ route_stats_diff as (
     er.bunching_rate as actual_bunching_rate,
     rs.avg_hw_ratio as expected_avg_hw_ratio,
     er.avg_hw_ratio as actual_avg_hw_ratio,
+    rs.median_scheduled_headway as expected_median_scheduled_headway,
+    er.median_scheduled_headway as actual_median_scheduled_headway,
     rs.median_actual_headway as expected_median_actual_headway,
     er.median_actual_headway as actual_median_actual_headway,
     case
@@ -91,6 +94,7 @@ route_stats_diff as (
       when rs.super_bunched_headways <> er.super_bunched_headways then true
       when abs(coalesce(rs.bunching_rate, 0) - coalesce(er.bunching_rate, 0)) > (select rate_tolerance from params) then true
       when abs(coalesce(rs.avg_hw_ratio, 0) - coalesce(er.avg_hw_ratio, 0)) > (select rate_tolerance from params) then true
+      when abs(coalesce(rs.median_scheduled_headway, 0) - coalesce(er.median_scheduled_headway, 0)) > (select rate_tolerance from params) then true
       when abs(coalesce(rs.median_actual_headway, 0) - coalesce(er.median_actual_headway, 0)) > (select rate_tolerance from params) then true
       else false
     end as has_mismatch

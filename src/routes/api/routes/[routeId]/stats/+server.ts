@@ -57,71 +57,17 @@ export const _buildHourlyBucketsQuery = ({ routeId, serviceId }: BuildHourlyBuck
 export const _buildSummaryQuery = ({ routeId, serviceId, bucket }: BuildSummaryQueryInput) => {
 	const filters: string[] = ['rbs.route_id = $1']
 	const paramsList: unknown[] = [routeId]
-	const scheduledFilters: string[] = ['he.route_id = $1', 'he.scheduled_headway_min IS NOT NULL']
 
-	if (serviceId === 'weekday') {
-		filters.push(`EXISTS (
-      SELECT 1
-      FROM gtfs_calendar gc
-      WHERE gc.service_id = rbs.service_id
-        AND (
-          gc.monday = 1
-          OR gc.tuesday = 1
-          OR gc.wednesday = 1
-          OR gc.thursday = 1
-          OR gc.friday = 1
-        )
-    )`)
-		scheduledFilters.push(`EXISTS (
-      SELECT 1
-      FROM gtfs_calendar gc
-      WHERE gc.service_id = he.service_id
-        AND (
-          gc.monday = 1
-          OR gc.tuesday = 1
-          OR gc.wednesday = 1
-          OR gc.thursday = 1
-          OR gc.friday = 1
-        )
-    )`)
-	} else if (serviceId === 'saturday') {
-		filters.push(`EXISTS (
-      SELECT 1
-      FROM gtfs_calendar gc
-      WHERE gc.service_id = rbs.service_id
-        AND gc.saturday = 1
-    )`)
-		scheduledFilters.push(`EXISTS (
-      SELECT 1
-      FROM gtfs_calendar gc
-      WHERE gc.service_id = he.service_id
-        AND gc.saturday = 1
-    )`)
-	} else if (serviceId === 'sunday') {
-		filters.push(`EXISTS (
-      SELECT 1
-      FROM gtfs_calendar gc
-      WHERE gc.service_id = rbs.service_id
-        AND gc.sunday = 1
-    )`)
-		scheduledFilters.push(`EXISTS (
-      SELECT 1
-      FROM gtfs_calendar gc
-      WHERE gc.service_id = he.service_id
-        AND gc.sunday = 1
-    )`)
-	} else if (serviceId) {
-		paramsList.push(serviceId)
-		filters.push(`rbs.service_id = $${paramsList.length}`)
-		scheduledFilters.push(`he.service_id = $${paramsList.length}`)
-	}
+	appendServiceFilter({
+		serviceId,
+		serviceIdColumn: 'rbs.service_id',
+		filters,
+		params: paramsList
+	})
 
 	if (bucket) {
 		paramsList.push(bucket)
 		filters.push(`rbs.time_of_day_bucket = $${paramsList.length}`)
-		scheduledFilters.push(
-			`coalesce(he.time_of_day_bucket, time_of_day_bucket(he.arrival_time)) = $${paramsList.length}`
-		)
 	}
 
 	const sql = `
@@ -133,11 +79,7 @@ export const _buildSummaryQuery = ({ routeId, serviceId, bucket }: BuildSummaryQ
         THEN SUM(rbs.bunched_headways)::float / SUM(rbs.total_headways)
         ELSE NULL
       END AS bunching_rate,
-      (
-        SELECT percentile_cont(0.5) within group (order by he.scheduled_headway_min)
-        FROM headways_enriched AS he
-        WHERE ${scheduledFilters.join(' AND ')}
-      ) AS median_scheduled_headway,
+      AVG(rbs.median_scheduled_headway) AS median_scheduled_headway,
       AVG(rbs.median_actual_headway) AS median_actual_headway
     FROM route_bunching_stats AS rbs
     WHERE ${filters.join(' AND ')}
