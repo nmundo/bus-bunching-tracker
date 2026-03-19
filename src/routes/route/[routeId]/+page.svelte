@@ -13,10 +13,10 @@
 
 	let { data }: Props = $props()
 
-	let serviceId = $state(data.serviceId)
-	let bucket = $state(data.bucket)
-	let stats = $state<PageData['stats']>(data.stats)
-	let segments = $state<PageData['segments']>(data.segments)
+	let serviceId = $derived(data.serviceId)
+	let bucket = $derived(data.bucket)
+	let stats = $derived<PageData['stats']>(data.stats)
+	let segments = $derived<PageData['segments']>(data.segments)
 	let loading = $state(false)
 
 	const timeBuckets = ['AM_peak', 'Midday', 'PM_peak', 'Evening', 'Night']
