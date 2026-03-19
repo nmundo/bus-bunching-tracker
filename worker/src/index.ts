@@ -4,6 +4,7 @@ import { runPoller } from './busTrackerPoller'
 import { runArrivals } from './arrivalsProcessor'
 import { runHeadways } from './headwayProcessor'
 import { runEnrich } from './enrichJob'
+import { runPublishServing } from './publishServing'
 
 const scheduleJobs = () => {
 	cron.schedule('30 2 * * *', () => {
@@ -21,6 +22,14 @@ const scheduleJobs = () => {
 	cron.schedule('15 * * * *', () => {
 		runEnrich().catch((error) => console.error('Enrichment job failed', error))
 	})
+
+	cron.schedule(
+		'30 3 * * *',
+		() => {
+			runPublishServing().catch((error) => console.error('Serving publish failed', error))
+		},
+		{ timezone: 'America/Chicago' }
+	)
 }
 
 const run = async () => {

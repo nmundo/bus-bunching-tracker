@@ -1,8 +1,13 @@
 import { json } from '@sveltejs/kit'
 import type { RequestHandler } from './$types'
 import { query } from '$server/db'
+import { env } from '$env/dynamic/private'
 
 export const GET: RequestHandler = async ({ params, url }) => {
+	if (env.ALLOW_RAW_HEADWAYS !== '1' && process.env.ALLOW_RAW_HEADWAYS !== '1') {
+		return json({ error: 'Headways endpoint is disabled in serving mode.' }, { status: 410 })
+	}
+
 	const routeId = params.routeId
 	const date = url.searchParams.get('date')
 	const stopId = url.searchParams.get('stop_id')

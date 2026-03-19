@@ -15,10 +15,12 @@
 		"arrivals:run": "tsx --tsconfig worker/tsconfig.json worker/src/arrivalsProcessor.ts",
 		"headways:run": "tsx --tsconfig worker/tsconfig.json worker/src/headwayProcessor.ts",
 		"enrich:run": "tsx --tsconfig worker/tsconfig.json worker/src/enrichJob.ts",
+		"publish:run": "tsx --tsconfig worker/tsconfig.json worker/src/publishServing.ts",
 		"test:sanity": "RUN_DB_TESTS=1 vitest run tests/dataSanity.integration.test.ts"
 	},
 	"dependencies": {
 		"@sveltejs/kit": "^2.6.5",
+		"@vercel/analytics": "^2.0.1",
 		"csv-parse": "^5.5.6",
 		"dotenv": "^16.4.5",
 		"maplibre-gl": "^4.7.1",

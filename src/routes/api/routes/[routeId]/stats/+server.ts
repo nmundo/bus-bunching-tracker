@@ -9,12 +9,12 @@ type BuildHourlyBucketsQueryInput = {
 }
 
 export const _buildHourlyBucketsQuery = ({ routeId, serviceId }: BuildHourlyBucketsQueryInput) => {
-	const filters: string[] = ['he.route_id = $1', "he.arrival_time >= now() - interval '30 day'"]
+	const filters: string[] = ['rhs.route_id = $1']
 	const paramsList: unknown[] = [routeId]
 
 	appendServiceFilter({
 		serviceId,
-		serviceIdColumn: 'he.service_id',
+		serviceIdColumn: 'rhs.service_id',
 		filters,
 		params: paramsList
 	})
@@ -25,10 +25,10 @@ export const _buildHourlyBucketsQuery = ({ routeId, serviceId }: BuildHourlyBuck
     ),
     hourly AS (
       SELECT
-        extract(hour from (he.arrival_time at time zone 'America/Chicago'))::int AS hour_of_day,
-        COUNT(*)::int AS total_headways,
-        COUNT(*) FILTER (WHERE he.bunched)::int AS bunched_headways
-      FROM headways_enriched AS he
+        rhs.hour_of_day,
+        SUM(rhs.total_headways)::int AS total_headways,
+        SUM(rhs.bunched_headways)::int AS bunched_headways
+      FROM route_hourly_bunching_stats AS rhs
       WHERE ${filters.join(' AND ')}
       GROUP BY 1
     )

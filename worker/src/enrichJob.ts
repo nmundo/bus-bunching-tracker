@@ -27,6 +27,7 @@ export const runEnrich = async ({
 
 	await query('select refresh_route_bunching_stats(30)')
 	await query('select refresh_segment_bunching_stats(30)')
+	await query('select refresh_route_hourly_bunching_stats(30)')
 	console.log(`Enrichment and stats refresh complete (${totalInserted} rows inserted)`)
 }
 

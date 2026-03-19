@@ -87,7 +87,7 @@ export const _buildSegmentsQuery = ({ routeId, serviceId, bucket }: BuildSegment
       filtered_stats.total_headways,
       filtered_stats.bunched_headways,
       filtered_stats.time_of_day_bucket,
-      ST_AsGeoJSON(s.geom)::json AS geometry
+      s.geometry AS geometry
     FROM segments s
     LEFT JOIN filtered_stats ON filtered_stats.segment_id = s.id
     LEFT JOIN gtfs_stops from_stop ON from_stop.stop_id = s.from_stop_id
