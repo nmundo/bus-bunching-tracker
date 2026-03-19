@@ -2,7 +2,7 @@
 	type Summary = {
 		bunching_rate: number | null
 		total_headways: number | null
-		avg_hw_ratio: number | null
+		median_scheduled_headway: number | null
 		median_actual_headway: number | null
 		route: {
 			route_short_name: string | null
@@ -33,9 +33,9 @@
 		<p>Share of observed headways considered bunched</p>
 	</div>
 	<div class="stat-card">
-		<p class="meta-line">Avg headway ratio</p>
-		<h3>{formatNumber(summary.avg_hw_ratio)}</h3>
-		<p>Actual headway divided by scheduled headway</p>
+		<p class="meta-line">Median scheduled headway (min)</p>
+		<h3>{formatNumber(summary.median_scheduled_headway)}</h3>
+		<p>Typical planned spacing between buses on this route</p>
 	</div>
 	<div class="stat-card">
 		<p class="meta-line">Median actual headway (min)</p>

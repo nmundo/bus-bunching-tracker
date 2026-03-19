@@ -13,10 +13,10 @@
 
 	let { data }: Props = $props()
 
-	let serviceId = $state('')
-	let bucket = $state('')
-	let stats = $state<PageData['stats']>(null)
-	let segments = $state<PageData['segments']>(null)
+	let serviceId = $state(data.serviceId)
+	let bucket = $state(data.bucket)
+	let stats = $state<PageData['stats']>(data.stats)
+	let segments = $state<PageData['segments']>(data.segments)
 	let loading = $state(false)
 
 	const timeBuckets = ['AM_peak', 'Midday', 'PM_peak', 'Evening', 'Night']
@@ -26,13 +26,6 @@
 		value === null || value === undefined ? '—' : value.toLocaleString()
 	const formatBucketLabel = (value: string) => value.replace('_', ' ')
 	const getRiskLevel = (value: number | null | undefined): RiskLevel => classifyRisk(value)
-
-	$effect(() => {
-		serviceId = data.serviceId
-		bucket = data.bucket
-		stats = data.stats
-		segments = data.segments
-	})
 
 	$effect(() => {
 		if (!browser) {
@@ -60,6 +53,7 @@
 		loading = true
 		const statsParams = new URLSearchParams()
 		if (serviceId) statsParams.set('service_id', serviceId)
+		if (bucket) statsParams.set('time_of_day_bucket', bucket)
 
 		const segmentsParams = new URLSearchParams()
 		if (serviceId) segmentsParams.set('service_id', serviceId)

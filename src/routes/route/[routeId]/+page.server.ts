@@ -7,6 +7,7 @@ export const load: PageServerLoad = async ({ fetch, params, url }) => {
 
 	const statsParams = new URLSearchParams()
 	if (serviceId) statsParams.set('service_id', serviceId)
+	if (bucket) statsParams.set('time_of_day_bucket', bucket)
 
 	const segmentsParams = new URLSearchParams()
 	if (serviceId) segmentsParams.set('service_id', serviceId)
