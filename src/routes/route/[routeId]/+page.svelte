@@ -115,12 +115,11 @@
 					<h3>Worst segments</h3>
 				</div>
 			</div>
-			<div class="table-wrap">
+			<div class="table-wrap segments-table-wrap">
 				<table class="table">
 					<thead>
 						<tr>
-							<th>From stop</th>
-							<th>To stop</th>
+							<th>Segment</th>
 							<th>Bunching rate</th>
 							<th>Total headways</th>
 						</tr>
@@ -128,13 +127,21 @@
 					<tbody>
 						{#if !segments}
 							<tr>
-								<td colspan="4" class="table-empty">No segments loaded for these filters.</td>
+								<td colspan="3" class="table-empty">No segments loaded for these filters.</td>
 							</tr>
 						{:else}
 							{#each worstSegments as feature, index (feature.properties?.segment_id ?? index)}
 								<tr>
-									<td>{feature.properties?.from_stop_name ?? '—'}</td>
-									<td>{feature.properties?.to_stop_name ?? '—'}</td>
+									<td class="segment-cell">
+										<div class="segment-stop-row">
+											<span class="segment-stop-label">From</span>
+											<span class="segment-stop-name">{feature.properties?.from_stop_name ?? '—'}</span>
+										</div>
+										<div class="segment-stop-row">
+											<span class="segment-stop-label">To</span>
+											<span class="segment-stop-name">{feature.properties?.to_stop_name ?? '—'}</span>
+										</div>
+									</td>
 									<td>
 										{#if feature.properties?.bunching_rate === undefined || feature.properties?.bunching_rate === null}
 											—
