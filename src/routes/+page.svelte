@@ -13,6 +13,7 @@
 		type RouteRiskFilter,
 		withRouteTableFilterParams
 	} from '$lib/ui/routeTableFilters'
+	import { withRouteDetailFilterParams } from '$lib/ui/routeDetailUrl'
 	import type { PageData } from './$types'
 
 	type Props = {
@@ -89,6 +90,28 @@
 			withDataCount,
 			totalRoutes: routes.length
 		}
+	})
+
+	$effect(() => {
+		if (!browser) {
+			return
+		}
+
+		const next = withRouteDetailFilterParams(new URLSearchParams(window.location.search), {
+			serviceId,
+			bucket
+		})
+		const nextQuery = next.toString()
+		const currentQuery = window.location.search.replace(/^\?/, '')
+
+		if (nextQuery === currentQuery) {
+			return
+		}
+
+		const nextUrl = nextQuery
+			? `${window.location.pathname}?${nextQuery}`
+			: window.location.pathname
+		window.history.replaceState(window.history.state, '', nextUrl)
 	})
 
 	const refresh = async () => {

@@ -47,6 +47,7 @@
 			? `${window.location.pathname}?${nextQuery}`
 			: window.location.pathname
 		window.history.replaceState(window.history.state, '', nextUrl)
+		refresh()
 	})
 
 	const refresh = async () => {
@@ -99,7 +100,6 @@
 					{/each}
 				</select>
 			</label>
-			<button onclick={refresh} disabled={loading} aria-label="Submit filters">&rarr;</button>
 		</div>
 	</div>
 
