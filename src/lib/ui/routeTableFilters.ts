@@ -51,11 +51,7 @@ export const applyRouteTableFilters = (
 
 	return routes.filter((route) => {
 		if (query) {
-			const haystack = [
-				route.route_short_name,
-				route.route_long_name ?? '',
-				route.route_id
-			]
+			const haystack = [route.route_short_name, route.route_long_name ?? '', route.route_id]
 				.join(' ')
 				.toLowerCase()
 
