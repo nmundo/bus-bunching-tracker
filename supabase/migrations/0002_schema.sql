@@ -20,14 +20,14 @@ create table if not exists gtfs_stops (
   stop_name text,
   stop_lat double precision,
   stop_lon double precision,
-  geom geometry(point, 4326)
+  geom extensions.geometry(point, 4326)
 );
 
 alter table gtfs_stops
   add column if not exists stop_name text,
   add column if not exists stop_lat double precision,
   add column if not exists stop_lon double precision,
-  add column if not exists geom geometry(point, 4326);
+  add column if not exists geom extensions.geometry(point, 4326);
 
 create index if not exists gtfs_stops_geom_idx on gtfs_stops using gist (geom);
 
@@ -96,7 +96,7 @@ create table if not exists segments (
   direction_id int,
   from_stop_id text references gtfs_stops(stop_id),
   to_stop_id text references gtfs_stops(stop_id),
-  geom geometry(linestring, 4326)
+  geom extensions.geometry(linestring, 4326)
 );
 
 alter table segments
@@ -104,7 +104,7 @@ alter table segments
   add column if not exists direction_id int,
   add column if not exists from_stop_id text references gtfs_stops(stop_id),
   add column if not exists to_stop_id text references gtfs_stops(stop_id),
-  add column if not exists geom geometry(linestring, 4326);
+  add column if not exists geom extensions.geometry(linestring, 4326);
 
 create index if not exists segments_geom_idx on segments using gist (geom);
 
@@ -149,7 +149,7 @@ create table if not exists bt_stops (
   stpnm text,
   lat double precision,
   lon double precision,
-  geom geometry(point, 4326),
+  geom extensions.geometry(point, 4326),
   rt text references bt_routes(rt),
   dir text
 );
@@ -160,7 +160,7 @@ create table if not exists bt_patterns (
   pid text primary key,
   rt text references bt_routes(rt),
   dir text,
-  geom geometry(linestring, 4326)
+  geom extensions.geometry(linestring, 4326)
 );
 
 create table if not exists bt_pattern_stops (
@@ -189,7 +189,7 @@ create table if not exists bus_positions (
   pid text references bt_patterns(pid),
   lat double precision,
   lon double precision,
-  geom geometry(point, 4326),
+  geom extensions.geometry(point, 4326),
   pdist_feet double precision,
   tmstmp timestamptz,
   tatripid text,
