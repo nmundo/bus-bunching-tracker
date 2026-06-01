@@ -7,6 +7,12 @@ create table if not exists gtfs_routes (
   route_type int
 );
 
+alter table gtfs_routes
+  add column if not exists agency_id text,
+  add column if not exists route_short_name text,
+  add column if not exists route_long_name text,
+  add column if not exists route_type int;
+
 create index if not exists gtfs_routes_short_name_idx on gtfs_routes (route_short_name);
 
 create table if not exists gtfs_stops (
@@ -16,6 +22,12 @@ create table if not exists gtfs_stops (
   stop_lon double precision,
   geom geometry(point, 4326)
 );
+
+alter table gtfs_stops
+  add column if not exists stop_name text,
+  add column if not exists stop_lat double precision,
+  add column if not exists stop_lon double precision,
+  add column if not exists geom geometry(point, 4326);
 
 create index if not exists gtfs_stops_geom_idx on gtfs_stops using gist (geom);
 
@@ -86,6 +98,13 @@ create table if not exists segments (
   to_stop_id text references gtfs_stops(stop_id),
   geom geometry(linestring, 4326)
 );
+
+alter table segments
+  add column if not exists route_id text references gtfs_routes(route_id),
+  add column if not exists direction_id int,
+  add column if not exists from_stop_id text references gtfs_stops(stop_id),
+  add column if not exists to_stop_id text references gtfs_stops(stop_id),
+  add column if not exists geom geometry(linestring, 4326);
 
 create index if not exists segments_geom_idx on segments using gist (geom);
 
@@ -250,6 +269,19 @@ create table if not exists route_bunching_stats (
   median_actual_headway double precision
 );
 
+alter table route_bunching_stats
+  add column if not exists id uuid default gen_random_uuid(),
+  add column if not exists route_id text,
+  add column if not exists direction_id int,
+  add column if not exists service_id text,
+  add column if not exists time_of_day_bucket text,
+  add column if not exists total_headways int,
+  add column if not exists bunched_headways int,
+  add column if not exists super_bunched_headways int,
+  add column if not exists bunching_rate double precision,
+  add column if not exists avg_hw_ratio double precision,
+  add column if not exists median_actual_headway double precision;
+
 create table if not exists segment_bunching_stats (
   id uuid primary key default gen_random_uuid(),
   segment_id uuid references segments(id),
@@ -261,6 +293,17 @@ create table if not exists segment_bunching_stats (
   bunched_headways int,
   bunching_rate double precision
 );
+
+alter table segment_bunching_stats
+  add column if not exists id uuid default gen_random_uuid(),
+  add column if not exists segment_id uuid references segments(id),
+  add column if not exists route_id text,
+  add column if not exists direction_id int,
+  add column if not exists service_id text,
+  add column if not exists time_of_day_bucket text,
+  add column if not exists total_headways int,
+  add column if not exists bunched_headways int,
+  add column if not exists bunching_rate double precision;
 
 create index if not exists segment_bunching_stats_route_bucket_idx
   on segment_bunching_stats (route_id, time_of_day_bucket);

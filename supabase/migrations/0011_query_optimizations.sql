@@ -221,7 +221,7 @@ begin
   create temp table recent_headways_enriched on commit drop as
   select
     he.route_id,
-    he.direction_id,
+    coalesce(he.direction_id, -1) as direction_id,
     he.segment_id,
     coalesce(he.service_id, 'unknown') as service_id,
     coalesce(he.time_of_day_bucket, time_of_day_bucket(he.arrival_time)) as time_of_day_bucket,
