@@ -7,6 +7,8 @@ const DEFAULT_MAX_BATCHES = 120
 export const _buildEnrichBatchSql = () =>
 	'select enrich_headways_batch_safe($1::integer) as inserted_rows'
 
+export const _buildRefreshStatsSql = () => 'select refresh_bunching_stats(30)'
+
 export const runEnrich = async ({
 	batchSize = DEFAULT_BATCH_SIZE,
 	maxBatches = DEFAULT_MAX_BATCHES
@@ -25,9 +27,7 @@ export const runEnrich = async ({
 		if (insertedRows === 0) break
 	}
 
-	await query('select refresh_route_bunching_stats(30)')
-	await query('select refresh_segment_bunching_stats(30)')
-	await query('select refresh_route_hourly_bunching_stats(30)')
+	await query(_buildRefreshStatsSql())
 	console.log(`Enrichment and stats refresh complete (${totalInserted} rows inserted)`)
 }
 

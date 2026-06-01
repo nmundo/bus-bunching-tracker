@@ -361,6 +361,15 @@ const computeScheduledHeadways = async () => {
     where headway_min is not null
     group by route_id, direction_id, stop_id, service_id, time_bin_start, time_bin_end
   `)
+	await query(`
+    do $$
+    begin
+      if to_regprocedure('refresh_scheduled_headway_route_fallback()') is not null then
+        perform refresh_scheduled_headway_route_fallback();
+      end if;
+    end
+    $$;
+  `)
 }
 
 const synthesizeFrequenciesIfEmpty = async () => {

@@ -2,6 +2,7 @@ import { fileURLToPath } from 'node:url'
 import { query } from './db'
 
 const FEET_PER_METER = 3.28084
+const STOP_ARRIVAL_INSERT_BATCH_SIZE = 1000
 
 type PatternStop = {
 	seq: number
@@ -17,6 +18,17 @@ type BusState = {
 	lastPdist: number
 	lastTimestamp: Date
 	lastStopIndex: number
+}
+
+type StopArrivalInsert = {
+	route_id: string
+	direction_id: number | null
+	stop_id: string
+	vid: string
+	rt: string
+	pid: string
+	arrival_time: Date
+	pdist_feet: number
 }
 
 const directionToId = (dir: string | null) => {
@@ -99,6 +111,54 @@ const setWatermark = async (watermark: Date) => {
 	)
 }
 
+const chunk = <T>(items: T[], size: number) => {
+	const chunks: T[][] = []
+	for (let i = 0; i < items.length; i += size) chunks.push(items.slice(i, i + size))
+	return chunks
+}
+
+export const _buildStopArrivalsInsertSql = (rowCount: number) => {
+	const columns = [
+		'route_id',
+		'direction_id',
+		'stop_id',
+		'vid',
+		'rt',
+		'pid',
+		'arrival_time',
+		'pdist_feet'
+	]
+	const values = Array.from({ length: rowCount }, (_, rowIndex) => {
+		const placeholders = columns.map(
+			(_, columnIndex) => `$${rowIndex * columns.length + columnIndex + 1}`
+		)
+		return `(${placeholders.join(', ')})`
+	})
+
+	return `
+    insert into stop_arrivals (${columns.join(', ')})
+    values ${values.join(', ')}
+  `
+}
+
+export const _flattenStopArrivalRows = (rows: StopArrivalInsert[]) =>
+	rows.flatMap((row) => [
+		row.route_id,
+		row.direction_id,
+		row.stop_id,
+		row.vid,
+		row.rt,
+		row.pid,
+		row.arrival_time,
+		row.pdist_feet
+	])
+
+const insertStopArrivals = async (rows: StopArrivalInsert[]) => {
+	for (const batch of chunk(rows, STOP_ARRIVAL_INSERT_BATCH_SIZE)) {
+		await query(_buildStopArrivalsInsertSql(batch.length), _flattenStopArrivalRows(batch))
+	}
+}
+
 export const runArrivals = async () => {
 	const patternStops = await loadPatternStops()
 	const routeMap = await loadRouteMap()
@@ -122,6 +182,7 @@ export const runArrivals = async () => {
 	)
 
 	const states = new Map<string, BusState>()
+	const arrivalsToInsert: StopArrivalInsert[] = []
 	let lastTimestamp = watermark
 
 	for (const row of result.rows) {
@@ -145,21 +206,16 @@ export const runArrivals = async () => {
 		while (nextIndex < stops.length && row.pdist_feet >= stops[nextIndex].distance_feet) {
 			const nextStop = stops[nextIndex]
 			if (routeId && nextStop.gtfs_stop_id) {
-				await query(
-					`insert into stop_arrivals (
-            route_id, direction_id, stop_id, vid, rt, pid, arrival_time, pdist_feet
-          ) values ($1, $2, $3, $4, $5, $6, $7, $8)`,
-					[
-						routeId,
-						directionId,
-						nextStop.gtfs_stop_id,
-						row.vid,
-						row.rt,
-						row.pid,
-						row.tmstmp,
-						row.pdist_feet
-					]
-				)
+				arrivalsToInsert.push({
+					route_id: routeId,
+					direction_id: directionId,
+					stop_id: nextStop.gtfs_stop_id,
+					vid: row.vid,
+					rt: row.rt,
+					pid: row.pid,
+					arrival_time: row.tmstmp,
+					pdist_feet: row.pdist_feet
+				})
 			}
 
 			state.lastStopIndex = nextIndex
@@ -171,6 +227,8 @@ export const runArrivals = async () => {
 		states.set(stateKey, state)
 		lastTimestamp = row.tmstmp
 	}
+
+	await insertStopArrivals(arrivalsToInsert)
 
 	if (lastTimestamp) {
 		await setWatermark(lastTimestamp)
