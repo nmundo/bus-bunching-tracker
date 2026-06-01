@@ -36,3 +36,7 @@ coverage/
 .cache/
 temp/
 instructions.md
+
+#supabase
+supabase/.tmp
+
