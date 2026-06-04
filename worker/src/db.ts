@@ -25,3 +25,15 @@ export const query = async <T = unknown>(text: string, params: unknown[] = []) =
 		client.release()
 	}
 }
+
+/**
+ * Drain and close the shared pool. Call this at the end of every
+ * standalone script so the process can exit cleanly instead of
+ * hanging on open idle connections.
+ */
+export const closePool = async () => {
+	if (pool) {
+		await pool.end()
+		pool = null
+	}
+}

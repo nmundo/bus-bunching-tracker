@@ -1,6 +1,6 @@
 import { fileURLToPath } from 'node:url'
 import { busTimeRequest } from './busTrackerClient'
-import { query } from './db'
+import { query, closePool } from './db'
 import { optionalEnv } from './env'
 
 const DEFAULT_INTERVAL = 45
@@ -9,7 +9,11 @@ const DEFAULT_LOW_TIER_MAX_STALENESS_SEC = 360
 const DEFAULT_ACTIVITY_TTL_SEC = 360
 const DEFAULT_ROUTE_REFRESH_SEC = 900
 const MAX_BACKOFF_STEPS = 6
+const MAX_CONSECUTIVE_FAILURES = 10
 export const MAX_ROUTES_PER_REQUEST = 10
+
+// Patterns only change during the nightly sync; 1 hour TTL is more than enough.
+const DEFAULT_PATTERNS_REFRESH_SEC = 3600
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -80,6 +84,10 @@ type PollerState = {
 		routes: string[]
 		loadedAtEpochSec: number
 	} | null
+	knownPatternsCache: {
+		patterns: Set<string>
+		loadedAtEpochSec: number
+	} | null
 	routeActivity: Map<string, RouteActivityState>
 	cycleIndex: number
 }
@@ -100,26 +108,49 @@ const loadKnownPatterns = async () => {
 	return new Set(result.rows.map((row) => row.pid))
 }
 
+// Return the cached known-patterns set, refreshing if older than
+// DEFAULT_PATTERNS_REFRESH_SEC.  Patterns only change during the nightly sync
+// so a 1-hour TTL eliminates ~80 full-table reads per hour with no correctness
+// trade-off (an unknown pid is simply stored as null, same as before).
+const getKnownPatterns = async (state: PollerState, nowEpochSec: number): Promise<Set<string>> => {
+	const stale =
+		!state.knownPatternsCache ||
+		nowEpochSec - state.knownPatternsCache.loadedAtEpochSec >= DEFAULT_PATTERNS_REFRESH_SEC
+
+	if (stale) {
+		const patterns = await loadKnownPatterns()
+		state.knownPatternsCache = { patterns, loadedAtEpochSec: nowEpochSec }
+	}
+
+	return state.knownPatternsCache!.patterns
+}
+
 const insertVehicles = async (vehicles: Vehicle[], knownPatterns: Set<string>) => {
 	if (!vehicles.length) return
 
+	// Column order (1-based per row):
+	//  $1=vid  $2=rt  $3=des  $4=pid  $5=lat  $6=lon
+	//  $7=pdist_feet  $8=tmstmp  $9=tatripid  $10=tablockid
+	// ST_MakePoint takes (longitude, latitude) → ($6, $5)
 	const values = vehicles.map((v) => [
-		v.vid,
-		v.rt,
-		v.des,
-		v.pid && knownPatterns.has(String(v.pid)) ? v.pid : null,
-		Number(v.lat),
-		Number(v.lon),
-		v.pdist ? Number(v.pdist) : null,
-		parseTimestamp(v.tmstmp),
-		v.tatripid ?? null,
-		v.tablockid ?? null
+		v.vid, // 1  vid
+		v.rt, // 2  rt
+		v.des, // 3  des
+		v.pid && knownPatterns.has(String(v.pid)) ? v.pid : null, // 4  pid
+		Number(v.lat), // 5  lat
+		Number(v.lon), // 6  lon
+		v.pdist ? Number(v.pdist) : null, // 7  pdist_feet
+		parseTimestamp(v.tmstmp), // 8  tmstmp
+		v.tatripid ?? null, // 9  tatripid
+		v.tablockid ?? null // 10 tablockid
 	])
 
 	const placeholders = values
-		.map((row, index) => {
-			const offset = index * 10
-			return `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, ST_SetSRID(ST_MakePoint($${offset + 6}, $${offset + 5}), 4326), $${offset + 7}, (to_timestamp($${offset + 8}, 'YYYYMMDD HH24:MI:SS')::timestamp at time zone 'America/Chicago'), $${offset + 9}, $${offset + 10})`
+		.map((_, index) => {
+			const o = index * 10
+			// Explicit mapping comment kept so any future column reorder is obvious.
+			// lon=$o+6, lat=$o+5 → ST_MakePoint(lon, lat) is correct PostGIS order.
+			return `($${o + 1},$${o + 2},$${o + 3},$${o + 4},$${o + 5},$${o + 6},ST_SetSRID(ST_MakePoint($${o + 6},$${o + 5}),4326),$${o + 7},(to_timestamp($${o + 8},'YYYYMMDD HH24:MI:SS')::timestamp at time zone 'America/Chicago'),$${o + 9},$${o + 10})`
 		})
 		.join(', ')
 
@@ -138,20 +169,21 @@ const parseEnvRoutes = () =>
 		.split(',')
 		.map((r) => r.trim())
 		.filter(Boolean)
+
 const loadRoutesFromDb = async () => {
 	const result = await query<{ rt: string }>('select rt from bt_routes')
 	return unique(result.rows.map((row) => row.rt).filter(Boolean)).sort()
 }
 
 export const clampBatchSize = (batchSize: number) =>
-	Number.isFinite(batchSize)
-		? clamp(Math.floor(batchSize), 1, MAX_ROUTES_PER_REQUEST)
-		: 1
+	Number.isFinite(batchSize) ? clamp(Math.floor(batchSize), 1, MAX_ROUTES_PER_REQUEST) : 1
 
 export const getLowTierCycleMultiplier = (lowTierMaxStalenessSec: number, intervalSec: number) =>
 	Math.max(
 		1,
-		Math.ceil(Math.max(1, Math.floor(lowTierMaxStalenessSec)) / Math.max(1, Math.floor(intervalSec)))
+		Math.ceil(
+			Math.max(1, Math.floor(lowTierMaxStalenessSec)) / Math.max(1, Math.floor(intervalSec))
+		)
 	)
 
 const readPollerConfig = (): PollerConfig => {
@@ -328,6 +360,7 @@ const logPollCycle = (metrics: PollCycleMetrics, config: PollerConfig) => {
 
 export const createPollerState = (): PollerState => ({
 	routeCache: null,
+	knownPatternsCache: null,
 	routeActivity: new Map<string, RouteActivityState>(),
 	cycleIndex: 0
 })
@@ -361,7 +394,7 @@ export const pollOnce = async (state: PollerState, config: PollerConfig) => {
 	const vehicles = successfulBatches.flatMap((result) => result.vehicles)
 
 	if (vehicles.length > 0) {
-		const knownPatterns = await loadKnownPatterns()
+		const knownPatterns = await getKnownPatterns(state, nowEpochSec)
 		await insertVehicles(vehicles, knownPatterns)
 		for (const vehicle of vehicles) {
 			state.routeActivity.set(vehicle.rt, { lastSeenEpochSec: nowEpochSec })
@@ -393,14 +426,23 @@ export const runPoller = async () => {
 	const config = readPollerConfig()
 	const state = createPollerState()
 	let backoff = 0
+	let consecutiveFailures = 0
 
 	while (true) {
 		try {
 			await pollOnce(state, config)
+			consecutiveFailures = 0
 			backoff = 0
 			await sleep(config.intervalSec * 1000)
 		} catch (error) {
-			console.error('Poller failed', error)
+			consecutiveFailures += 1
+			console.error(`Poller failed (${consecutiveFailures}/${MAX_CONSECUTIVE_FAILURES})`, error)
+			if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+				console.error(
+					`Poller exceeded ${MAX_CONSECUTIVE_FAILURES} consecutive failures — exiting so the process supervisor can restart`
+				)
+				process.exit(1)
+			}
 			backoff = Math.min(backoff + 1, MAX_BACKOFF_STEPS)
 			const wait = Math.pow(2, backoff) * 1000
 			await sleep(wait)
@@ -411,8 +453,9 @@ export const runPoller = async () => {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-	runPoller().catch((error) => {
+	runPoller().catch(async (error) => {
 		console.error('Poller crashed', error)
+		await closePool()
 		process.exit(1)
 	})
 }

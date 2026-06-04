@@ -1,6 +1,7 @@
 import pg from 'pg'
 import 'dotenv/config'
 import { fileURLToPath } from 'node:url'
+import { getPool } from './db'
 import { runEnrich } from './enrichJob'
 
 const { Pool } = pg
@@ -20,7 +21,9 @@ const chunk = <T>(items: T[], size: number) => {
 const buildInsertSql = (table: string, columns: string[], rowCount: number) => {
 	const colsSql = columns.map((c) => `"${c}"`).join(', ')
 	const valuesSql = Array.from({ length: rowCount }, (_, rowIndex) => {
-		const placeholders = columns.map((_, colIndex) => `$${rowIndex * columns.length + colIndex + 1}`)
+		const placeholders = columns.map(
+			(_, colIndex) => `$${rowIndex * columns.length + colIndex + 1}`
+		)
 		return `(${placeholders.join(', ')})`
 	}).join(', ')
 	return `insert into ${table} (${colsSql}) values ${valuesSql}`
@@ -60,10 +63,11 @@ export const runPublishServing = async () => {
 
 	await runEnrich({ maxBatches: 120 })
 
-	const warehousePool = new Pool({ connectionString: warehouseUrl })
+	// Re-use the shared warehouse pool (already initialised by runEnrich above)
+	// instead of opening a second pool to the same database.
 	const servingPool = new Pool({ connectionString: servingUrl })
 
-	const warehouseClient = await warehousePool.connect()
+	const warehouseClient = await getPool().connect()
 	const servingClient = await servingPool.connect()
 
 	try {
@@ -76,203 +80,201 @@ export const runPublishServing = async () => {
 			return
 		}
 
-		const [
-			routes,
-			stops,
-			calendar,
-			segments,
-			routeStats,
-			segmentStats,
-			hourlyStats,
-			maxArrival
-		] = await Promise.all([
-			warehouseClient.query(
-				`select route_id, route_short_name, route_long_name from gtfs_routes order by route_short_name`
-			),
-			warehouseClient.query(`select stop_id, stop_name from gtfs_stops`),
-			warehouseClient.query(
-				`select service_id, monday, tuesday, wednesday, thursday, friday, saturday, sunday, start_date, end_date from gtfs_calendar`
-			),
-			warehouseClient.query(
-				`
-        select
-          id,
-          route_id,
-          direction_id,
-          from_stop_id,
-          to_stop_id,
-          coalesce(geometry, st_asgeojson(geom)::jsonb) as geometry
-        from segments
-      `
-			),
-			warehouseClient.query(
-				`
-        select
-          route_id,
-          coalesce(direction_id, -1) as direction_id,
-          coalesce(service_id, 'unknown') as service_id,
-          time_of_day_bucket,
-          total_headways,
-          bunched_headways,
-          super_bunched_headways,
-          bunching_rate,
-          avg_hw_ratio,
-          median_scheduled_headway,
-          median_actual_headway
-        from route_bunching_stats
-      `
-			),
-			warehouseClient.query(
-				`
-        select
-          segment_id,
-          route_id,
-          coalesce(service_id, 'unknown') as service_id,
-          time_of_day_bucket,
-          sum(total_headways)::int as total_headways,
-          sum(bunched_headways)::int as bunched_headways,
-          case
-            when sum(total_headways) > 0
-            then sum(bunched_headways)::float / sum(total_headways)
-            else null
-          end as bunching_rate,
-          -1::int as direction_id
-        from segment_bunching_stats
-        group by segment_id, route_id, coalesce(service_id, 'unknown'), time_of_day_bucket
-      `
-			),
-			warehouseClient.query(
-				`
-        select
-          route_id,
-          service_id,
-          hour_of_day,
-          total_headways,
-          bunched_headways,
-          computed_at,
-          window_days
-        from route_hourly_bunching_stats
-      `
-			),
-			warehouseClient.query<{ max_observed_arrival_time: string | null }>(
-				`select max(arrival_time) as max_observed_arrival_time from headways_enriched`
-			)
-		])
-
-		await servingClient.query('begin')
+		// Lock acquired — ensure it is always released, even on error.
 		try {
-			await servingClient.query(`
-        truncate table
-          segment_bunching_stats,
-          route_bunching_stats,
-          route_hourly_bunching_stats,
-          segments,
-          gtfs_stops,
-          gtfs_calendar,
-          gtfs_routes
-      `)
+			const [routes, stops, calendar, segments, routeStats, segmentStats, hourlyStats, maxArrival] =
+				await Promise.all([
+					warehouseClient.query(
+						`select route_id, route_short_name, route_long_name from gtfs_routes order by route_short_name`
+					),
+					warehouseClient.query(`select stop_id, stop_name from gtfs_stops`),
+					warehouseClient.query(
+						`select service_id, monday, tuesday, wednesday, thursday, friday, saturday, sunday, start_date, end_date from gtfs_calendar`
+					),
+					warehouseClient.query(
+						`
+          select
+            id,
+            route_id,
+            direction_id,
+            from_stop_id,
+            to_stop_id,
+            coalesce(geometry, st_asgeojson(geom)::jsonb) as geometry
+          from segments
+        `
+					),
+					warehouseClient.query(
+						`
+          select
+            route_id,
+            coalesce(direction_id, -1) as direction_id,
+            coalesce(service_id, 'unknown') as service_id,
+            time_of_day_bucket,
+            total_headways,
+            bunched_headways,
+            super_bunched_headways,
+            bunching_rate,
+            avg_hw_ratio,
+            median_scheduled_headway,
+            median_actual_headway
+          from route_bunching_stats
+        `
+					),
+					warehouseClient.query(
+						`
+          select
+            segment_id,
+            route_id,
+            coalesce(service_id, 'unknown') as service_id,
+            time_of_day_bucket,
+            sum(total_headways)::int as total_headways,
+            sum(bunched_headways)::int as bunched_headways,
+            case
+              when sum(total_headways) > 0
+              then sum(bunched_headways)::float / sum(total_headways)
+              else null
+            end as bunching_rate,
+            -1::int as direction_id
+          from segment_bunching_stats
+          group by segment_id, route_id, coalesce(service_id, 'unknown'), time_of_day_bucket
+        `
+					),
+					warehouseClient.query(
+						`
+          select
+            route_id,
+            service_id,
+            hour_of_day,
+            total_headways,
+            bunched_headways,
+            computed_at,
+            window_days
+          from route_hourly_bunching_stats
+        `
+					),
+					warehouseClient.query<{ max_observed_arrival_time: string | null }>(
+						`select max(arrival_time) as max_observed_arrival_time from headways_enriched`
+					)
+				])
 
-			await insertBatched(servingClient, {
-				table: 'gtfs_routes',
-				columns: ['route_id', 'route_short_name', 'route_long_name'],
-				rows: routes.rows
-			})
-			await insertBatched(servingClient, {
-				table: 'gtfs_stops',
-				columns: ['stop_id', 'stop_name'],
-				rows: stops.rows
-			})
-			await insertBatched(servingClient, {
-				table: 'gtfs_calendar',
-				columns: [
-					'service_id',
-					'monday',
-					'tuesday',
-					'wednesday',
-					'thursday',
-					'friday',
-					'saturday',
-					'sunday',
-					'start_date',
-					'end_date'
-				],
-				rows: calendar.rows
-			})
-			await insertBatched(servingClient, {
-				table: 'segments',
-				columns: ['id', 'route_id', 'direction_id', 'from_stop_id', 'to_stop_id', 'geometry'],
-				rows: segments.rows,
-				batchSize: 200
-			})
-			await insertBatched(servingClient, {
-				table: 'route_bunching_stats',
-				columns: [
-					'route_id',
-					'direction_id',
-					'service_id',
-					'time_of_day_bucket',
-					'total_headways',
-					'bunched_headways',
-					'super_bunched_headways',
-					'bunching_rate',
-					'avg_hw_ratio',
-					'median_scheduled_headway',
-					'median_actual_headway'
-				],
-				rows: routeStats.rows
-			})
-			await insertBatched(servingClient, {
-				table: 'segment_bunching_stats',
-				columns: [
-					'segment_id',
-					'route_id',
-					'direction_id',
-					'service_id',
-					'time_of_day_bucket',
-					'total_headways',
-					'bunched_headways',
-					'bunching_rate'
-				],
-				rows: segmentStats.rows
-			})
-			await insertBatched(servingClient, {
-				table: 'route_hourly_bunching_stats',
-				columns: [
-					'route_id',
-					'service_id',
-					'hour_of_day',
-					'total_headways',
-					'bunched_headways',
-					'computed_at',
-					'window_days'
-				],
-				rows: hourlyStats.rows
-			})
+			await servingClient.query('begin')
+			try {
+				await servingClient.query(`
+          truncate table
+            segment_bunching_stats,
+            route_bunching_stats,
+            route_hourly_bunching_stats,
+            segments,
+            gtfs_stops,
+            gtfs_calendar,
+            gtfs_routes
+        `)
 
-			const maxObservedArrivalTime = maxArrival.rows[0]?.max_observed_arrival_time ?? null
-			await servingClient.query(
-				`
-        insert into publish_meta (id, last_published_at, window_days, max_observed_arrival_time)
-        values (1, now(), $1::int, $2::timestamptz)
-        on conflict (id)
-        do update set
-          last_published_at = excluded.last_published_at,
-          window_days = excluded.window_days,
-          max_observed_arrival_time = excluded.max_observed_arrival_time
-      `,
-				[windowDays, maxObservedArrivalTime]
-			)
+				await insertBatched(servingClient, {
+					table: 'gtfs_routes',
+					columns: ['route_id', 'route_short_name', 'route_long_name'],
+					rows: routes.rows
+				})
+				await insertBatched(servingClient, {
+					table: 'gtfs_stops',
+					columns: ['stop_id', 'stop_name'],
+					rows: stops.rows
+				})
+				await insertBatched(servingClient, {
+					table: 'gtfs_calendar',
+					columns: [
+						'service_id',
+						'monday',
+						'tuesday',
+						'wednesday',
+						'thursday',
+						'friday',
+						'saturday',
+						'sunday',
+						'start_date',
+						'end_date'
+					],
+					rows: calendar.rows
+				})
+				await insertBatched(servingClient, {
+					table: 'segments',
+					columns: ['id', 'route_id', 'direction_id', 'from_stop_id', 'to_stop_id', 'geometry'],
+					rows: segments.rows,
+					batchSize: 200
+				})
+				await insertBatched(servingClient, {
+					table: 'route_bunching_stats',
+					columns: [
+						'route_id',
+						'direction_id',
+						'service_id',
+						'time_of_day_bucket',
+						'total_headways',
+						'bunched_headways',
+						'super_bunched_headways',
+						'bunching_rate',
+						'avg_hw_ratio',
+						'median_scheduled_headway',
+						'median_actual_headway'
+					],
+					rows: routeStats.rows
+				})
+				await insertBatched(servingClient, {
+					table: 'segment_bunching_stats',
+					columns: [
+						'segment_id',
+						'route_id',
+						'direction_id',
+						'service_id',
+						'time_of_day_bucket',
+						'total_headways',
+						'bunched_headways',
+						'bunching_rate'
+					],
+					rows: segmentStats.rows
+				})
+				await insertBatched(servingClient, {
+					table: 'route_hourly_bunching_stats',
+					columns: [
+						'route_id',
+						'service_id',
+						'hour_of_day',
+						'total_headways',
+						'bunched_headways',
+						'computed_at',
+						'window_days'
+					],
+					rows: hourlyStats.rows
+				})
 
-			await servingClient.query('commit')
-		} catch (error) {
-			await servingClient.query('rollback')
-			throw error
+				const maxObservedArrivalTime = maxArrival.rows[0]?.max_observed_arrival_time ?? null
+				await servingClient.query(
+					`
+          insert into publish_meta (id, last_published_at, window_days, max_observed_arrival_time)
+          values (1, now(), $1::int, $2::timestamptz)
+          on conflict (id)
+          do update set
+            last_published_at = excluded.last_published_at,
+            window_days = excluded.window_days,
+            max_observed_arrival_time = excluded.max_observed_arrival_time
+        `,
+					[windowDays, maxObservedArrivalTime]
+				)
+
+				await servingClient.query('commit')
+			} catch (error) {
+				await servingClient.query('rollback')
+				throw error
+			}
+		} finally {
+			// Always release the advisory lock, whether the publish succeeded or failed.
+			// This prevents the lock from persisting if the pool keeps the session alive.
+			await servingClient.query('select pg_advisory_unlock($1)', [SERVING_ADVISORY_LOCK_KEY])
 		}
 	} finally {
 		servingClient.release()
 		warehouseClient.release()
 		await servingPool.end()
-		await warehousePool.end()
 	}
 }
 

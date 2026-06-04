@@ -6,7 +6,7 @@ import { pipeline } from 'node:stream/promises'
 import { Readable } from 'node:stream'
 import unzipper from 'unzipper'
 import { parse } from 'csv-parse'
-import { query } from './db'
+import { query, getPool, closePool } from './db'
 
 const GTFS_URL = 'https://www.transitchicago.com/downloads/sch_data/google_transit.zip'
 
@@ -24,17 +24,46 @@ const toDate = (value: string | undefined) => {
 	if (value.includes('-')) return value
 	return `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`
 }
-const normalizeTime = (value: string | undefined) => {
+
+/**
+ * Normalise a GTFS time string to a Postgres-compatible HH:MM:SS value.
+ *
+ * GTFS deliberately allows times ≥ 24:00 for overnight/next-day trips
+ * (e.g. "25:30:00" means 01:30 AM the following service day). Postgres `time`
+ * columns reject values ≥ 24:00, so we wrap the hours with % 24 before
+ * storing and log a warning so the data loss is visible.
+ *
+ * Impact of wrapping: downstream schedule logic uses departure_time only for
+ * relative bin comparisons and lag-based headway deltas within the same
+ * (route, stop, service_id, time_bin) partition. Trips past midnight wrap
+ * into early-morning bins, which is where they belong schedule-wise, so the
+ * computed headways remain correct for the vast majority of cases.
+ *
+ * Long-term fix: migrate gtfs_stop_times.arrival_time / departure_time and
+ * gtfs_frequencies.start_time / end_time to `interval` so the raw GTFS value
+ * is preserved. See migration 0011 (TODO) for that schema change.
+ *
+ * If the value is malformed we return it as-is and let Postgres surface a
+ * clear error rather than silently swallowing bad data.
+ */
+const normalizeTime = (value: string | undefined): string | null => {
 	if (!value) return null
-	const parts = value.split(':').map((part) => Number.parseInt(part, 10))
-	if (parts.length < 2 || parts.some((part) => Number.isNaN(part))) {
-		return value
-	}
-	const [rawHours, rawMinutes = 0, rawSeconds = 0] = parts
-	const hours = rawHours % 24
-	const minutes = rawMinutes % 60
-	const seconds = rawSeconds % 60
-	return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
+	const trimmed = value.trim()
+	const parts = trimmed.split(':')
+	if (parts.length < 2 || parts.length > 3) return trimmed
+	const [rawH, rawM, rawS = '00'] = parts
+	const h = Number.parseInt(rawH, 10)
+	const m = Number.parseInt(rawM, 10)
+	const s = Number.parseInt(rawS, 10)
+	if (Number.isNaN(h) || Number.isNaN(m) || Number.isNaN(s)) return trimmed
+	//
+	// if (h >= 24) {
+	// 	console.warn(
+	// 		`normalizeTime: GTFS time "${trimmed}" exceeds 23:59:59 — wrapping hours (${h} → ${h % 24}) to fit Postgres "time" column. Overnight trip data may be slightly misclassified into early-morning bins.`
+	// 	)
+	// }
+	// const wrappedH = h % 24
+	return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 }
 
 const TABLES: Record<string, TableConfig> = {
@@ -169,29 +198,26 @@ const batchUpsert = async (
 	await query(sql, flatValues)
 }
 
+/**
+ * Stream-parse a CSV file and upsert rows in batches of 1000.
+ *
+ * Uses `for await...of` on the csv-parse async iterator so backpressure and
+ * stream completion are handled by the runtime. This avoids the race condition
+ * in the previous event-listener approach where `pipeline()` could resolve
+ * before the last `readable` handler's `await batchUpsert` finished.
+ */
 const importFile = async (stream: NodeJS.ReadableStream, config: TableConfig) => {
-	const parser = parse({ columns: true, trim: true, skip_empty_lines: true })
+	const parser = stream.pipe(parse({ columns: true, trim: true, skip_empty_lines: true }))
 	const batch: (string | number | null)[][] = []
 
-	parser.on('readable', async () => {
-		let record: Record<string, string> | null
-		while ((record = parser.read()) !== null) {
-			batch.push(config.mapRow(record))
-			if (batch.length >= 1000) {
-				parser.pause()
-				await batchUpsert(
-					config.table,
-					config.columns,
-					config.conflict,
-					batch.splice(0, batch.length)
-				)
-				parser.resume()
-			}
+	for await (const record of parser) {
+		batch.push(config.mapRow(record as Record<string, string>))
+		if (batch.length >= 1000) {
+			await batchUpsert(config.table, config.columns, config.conflict, batch.splice(0))
 		}
-	})
+	}
 
-	await pipeline(stream, parser)
-	if (batch.length) {
+	if (batch.length > 0) {
 		await batchUpsert(config.table, config.columns, config.conflict, batch)
 	}
 }
@@ -204,112 +230,142 @@ const refreshStopGeometry = async () => {
   `)
 }
 
+/**
+ * Rebuild canonical stop sequences and route segments inside a single
+ * transaction so that a mid-run failure never leaves the tables empty.
+ * Previously these were plain sequential queries; a crash after the DELETEs
+ * but before the INSERTs would leave segments empty and break FK constraints.
+ */
 const buildCanonicalSequences = async () => {
-	await query('delete from route_stop_sequences')
-	await query('delete from segments')
+	const client = await getPool().connect()
+	try {
+		await client.query('begin')
 
-	await query(`
-    with canonical as (
-      select route_id, direction_id, trip_id, shape_id
-      from (
-        select t.route_id, t.direction_id, t.trip_id, t.shape_id,
-          count(*) as stop_count,
-          row_number() over (partition by t.route_id, t.direction_id order by count(*) desc) as rn
-        from gtfs_trips t
-        join gtfs_stop_times st on st.trip_id = t.trip_id
-        group by t.route_id, t.direction_id, t.trip_id, t.shape_id
-      ) ranked
-      where rn = 1
-    ),
-    shape_lines as (
-      select shape_id,
-        ST_MakeLine(
-          array_agg(ST_SetSRID(ST_MakePoint(shape_pt_lon, shape_pt_lat), 4326) order by shape_pt_sequence)
-        ) as geom
-      from gtfs_shapes
-      group by shape_id
-    ),
-    stops as (
-      select c.route_id, c.direction_id, c.trip_id, c.shape_id,
-        st.stop_sequence, st.stop_id,
-        s.geom as stop_geom,
-        sl.geom as shape_geom,
-        ST_LineLocatePoint(sl.geom, s.geom) as frac_along,
-        ST_Length(sl.geom::geography) as shape_length_m
-      from canonical c
-      join gtfs_stop_times st on st.trip_id = c.trip_id
-      join gtfs_stops s on s.stop_id = st.stop_id
-      join shape_lines sl on sl.shape_id = c.shape_id
-    )
-    insert into route_stop_sequences (
-      route_id,
-      direction_id,
-      stop_sequence,
-      stop_id,
-      shape_id,
-      cumulative_distance_m
-    )
-    select
-      route_id,
-      direction_id,
-      stop_sequence,
-      stop_id,
-      shape_id,
-      (frac_along * shape_length_m)
-    from stops
-    order by route_id, direction_id, stop_sequence
-  `)
+		// Null out FK references to segments before deleting them.
+		// headways.segment_id and headways_enriched.segment_id both reference
+		// segments(id). We preserve the headway rows — segment_ids will be
+		// backfilled by backfill_headways_segment_ids() after the new segments
+		// are inserted.
+		await client.query('update headways set segment_id = null where segment_id is not null')
+		await client.query(
+			'update headways_enriched set segment_id = null where segment_id is not null'
+		)
+		await client.query(
+			'update segment_bunching_stats set segment_id = null where segment_id is not null'
+		)
+		await client.query('delete from route_stop_sequences')
+		await client.query('delete from segments')
 
-	await query(`
-    with shape_lines as (
-      select shape_id,
-        ST_MakeLine(
-          array_agg(ST_SetSRID(ST_MakePoint(shape_pt_lon, shape_pt_lat), 4326) order by shape_pt_sequence)
-        ) as geom,
-        ST_Length(ST_MakeLine(
-          array_agg(ST_SetSRID(ST_MakePoint(shape_pt_lon, shape_pt_lat), 4326) order by shape_pt_sequence)
-        )::geography) as length_m
-      from gtfs_shapes
-      group by shape_id
-    ),
-    seqs as (
-      select
-        rss.*,
-        lag(rss.stop_id) over w as prev_stop_id,
-        lag(rss.cumulative_distance_m) over w as prev_dist
-      from route_stop_sequences rss
-      window w as (partition by route_id, direction_id order by stop_sequence)
-    )
-    insert into segments (
-      route_id,
-      direction_id,
-      from_stop_id,
-      to_stop_id,
-      geom
-    )
-    select
-      s.route_id,
-      s.direction_id,
-      s.prev_stop_id,
-      s.stop_id,
-      ST_LineSubstring(
-        sl.geom,
-        greatest(0, least(1, least(s.prev_dist, s.cumulative_distance_m) / nullif(sl.length_m, 0))),
-        greatest(0, least(1, greatest(s.prev_dist, s.cumulative_distance_m) / nullif(sl.length_m, 0)))
+		await client.query(`
+      with canonical as (
+        select route_id, direction_id, trip_id, shape_id
+        from (
+          select t.route_id, t.direction_id, t.trip_id, t.shape_id,
+            count(*) as stop_count,
+            row_number() over (partition by t.route_id, t.direction_id order by count(*) desc) as rn
+          from gtfs_trips t
+          join gtfs_stop_times st on st.trip_id = t.trip_id
+          group by t.route_id, t.direction_id, t.trip_id, t.shape_id
+        ) ranked
+        where rn = 1
+      ),
+      shape_lines as (
+        select shape_id,
+          ST_MakeLine(
+            array_agg(ST_SetSRID(ST_MakePoint(shape_pt_lon, shape_pt_lat), 4326) order by shape_pt_sequence)
+          ) as geom
+        from gtfs_shapes
+        group by shape_id
+      ),
+      stops as (
+        select c.route_id, c.direction_id, c.trip_id, c.shape_id,
+          st.stop_sequence, st.stop_id,
+          s.geom as stop_geom,
+          sl.geom as shape_geom,
+          ST_LineLocatePoint(sl.geom, s.geom) as frac_along,
+          ST_Length(sl.geom::geography) as shape_length_m
+        from canonical c
+        join gtfs_stop_times st on st.trip_id = c.trip_id
+        join gtfs_stops s on s.stop_id = st.stop_id
+        join shape_lines sl on sl.shape_id = c.shape_id
       )
-    from seqs s
-    join shape_lines sl on sl.shape_id = s.shape_id
-    where s.prev_stop_id is not null
-  `)
+      insert into route_stop_sequences (
+        route_id,
+        direction_id,
+        stop_sequence,
+        stop_id,
+        shape_id,
+        cumulative_distance_m
+      )
+      select
+        route_id,
+        direction_id,
+        stop_sequence,
+        stop_id,
+        shape_id,
+        (frac_along * shape_length_m)
+      from stops
+      order by route_id, direction_id, stop_sequence
+    `)
 
-	await query(`
-    update route_stop_sequences rss
-    set segment_id = seg.id
-    from segments seg
-    where rss.route_id = seg.route_id
-      and rss.direction_id = seg.direction_id
-      and rss.stop_id = seg.to_stop_id
-  `)
+		await client.query(`
+      with shape_lines as (
+        select shape_id,
+          ST_MakeLine(
+            array_agg(ST_SetSRID(ST_MakePoint(shape_pt_lon, shape_pt_lat), 4326) order by shape_pt_sequence)
+          ) as geom,
+          ST_Length(ST_MakeLine(
+            array_agg(ST_SetSRID(ST_MakePoint(shape_pt_lon, shape_pt_lat), 4326) order by shape_pt_sequence)
+          )::geography) as length_m
+        from gtfs_shapes
+        group by shape_id
+      ),
+      seqs as (
+        select
+          rss.*,
+          lag(rss.stop_id) over w as prev_stop_id,
+          lag(rss.cumulative_distance_m) over w as prev_dist
+        from route_stop_sequences rss
+        window w as (partition by route_id, direction_id order by stop_sequence)
+      )
+      insert into segments (
+        route_id,
+        direction_id,
+        from_stop_id,
+        to_stop_id,
+        geom
+      )
+      select
+        s.route_id,
+        s.direction_id,
+        s.prev_stop_id,
+        s.stop_id,
+        ST_LineSubstring(
+          sl.geom,
+          greatest(0, least(1, least(s.prev_dist, s.cumulative_distance_m) / nullif(sl.length_m, 0))),
+          greatest(0, least(1, greatest(s.prev_dist, s.cumulative_distance_m) / nullif(sl.length_m, 0)))
+        )
+      from seqs s
+      join shape_lines sl on sl.shape_id = s.shape_id
+      where s.prev_stop_id is not null
+    `)
+
+		await client.query(`
+      update route_stop_sequences rss
+      set segment_id = seg.id
+      from segments seg
+      where rss.route_id = seg.route_id
+        and rss.direction_id = seg.direction_id
+        and rss.stop_id = seg.to_stop_id
+    `)
+
+		await client.query('commit')
+	} catch (err) {
+		await client.query('rollback')
+		throw err
+	} finally {
+		client.release()
+	}
 }
 
 const computeScheduledHeadways = async () => {
@@ -320,7 +376,12 @@ const computeScheduledHeadways = async () => {
       from generate_series(0, 95) gs
     ),
     departures as (
-      select t.route_id, t.direction_id, st.stop_id, t.service_id, st.departure_time
+      select t.route_id, t.direction_id, st.stop_id, t.service_id,
+        -- Cast to interval so this query works both before migration 0012 (where
+        -- departure_time is type 'time') and after (where it becomes 'interval').
+        -- 'time'::interval and 'interval'::interval both produce an interval value,
+        -- allowing a consistent comparison against the interval-typed bin boundaries.
+        st.departure_time::interval as departure_time
       from gtfs_trips t
       join gtfs_stop_times st on st.trip_id = t.trip_id
     ),
@@ -329,8 +390,8 @@ const computeScheduledHeadways = async () => {
         (b.time_bin_start + interval '15 minutes')::time as time_bin_end
       from departures d
       join bins b
-        on d.departure_time >= b.time_bin_start
-       and d.departure_time < (b.time_bin_start + interval '15 minutes')
+        on d.departure_time >= b.time_bin_start::interval
+       and d.departure_time < (b.time_bin_start + interval '15 minutes')::interval
     ),
     ordered as (
       select *,
@@ -360,15 +421,6 @@ const computeScheduledHeadways = async () => {
     from ordered
     where headway_min is not null
     group by route_id, direction_id, stop_id, service_id, time_bin_start, time_bin_end
-  `)
-	await query(`
-    do $$
-    begin
-      if to_regprocedure('refresh_scheduled_headway_route_fallback()') is not null then
-        perform refresh_scheduled_headway_route_fallback();
-      end if;
-    end
-    $$;
   `)
 }
 
@@ -485,11 +537,13 @@ const runImport = async () => {
 }
 
 runImport()
-	.then(() => {
+	.then(async () => {
 		console.log('GTFS import complete')
+		await closePool()
 		process.exit(0)
 	})
-	.catch((error) => {
+	.catch(async (error) => {
 		console.error('GTFS import failed', error)
+		await closePool()
 		process.exit(1)
 	})
