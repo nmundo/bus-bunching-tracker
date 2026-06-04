@@ -3,15 +3,22 @@
 	import type { RouteStat } from '$lib/types/frontend'
 	import { buildRouteDetailHref } from '$lib/ui/routeDetailUrl'
 	import { classifyRisk, type RiskLevel } from '$lib/ui/networkMetrics'
+	import type { RouteSortCol, RouteSortDir } from '$lib/ui/routeTableFilters'
 
 	let {
 		routes = [],
 		serviceId = '',
-		bucket = ''
+		bucket = '',
+		sortCol = 'bunching_rate',
+		sortDir = 'desc',
+		onSort
 	}: {
 		routes?: RouteStat[]
 		serviceId?: string
 		bucket?: string
+		sortCol?: RouteSortCol
+		sortDir?: RouteSortDir
+		onSort?: (col: RouteSortCol) => void
 	} = $props()
 
 	const formatPercent = (value: number | null) =>
@@ -20,23 +27,55 @@
 	const formatHeadways = (value: number | null) => (value === null ? '—' : value.toLocaleString())
 	const getRiskLevel = (value: number | null): RiskLevel => classifyRisk(value)
 	const getRouteHref = (routeId: string) => buildRouteDetailHref(routeId, { serviceId, bucket })
+
+	const sortArrow = (col: RouteSortCol) => {
+		if (col !== sortCol) return ''
+		return sortDir === 'asc' ? ' ↑' : ' ↓'
+	}
+
+	const BUCKET_LABELS: Record<string, string> = {
+		AM_peak: 'AM Peak',
+		Midday: 'Midday',
+		PM_peak: 'PM Peak',
+		Evening: 'Evening',
+		Night: 'Night'
+	}
+	const formatBucket = (bucket: string | null) =>
+		bucket ? (BUCKET_LABELS[bucket] ?? bucket) : null
 </script>
 
 <div class="table-wrap">
 	<table class="table">
 		<thead>
 			<tr>
-				<th>Route</th>
+				<th
+					class="sortable-th"
+					onclick={() => onSort?.('route')}
+					aria-sort={sortCol === 'route' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+				>Route{sortArrow('route')}</th>
 				<th>Name</th>
-				<th>Bunching rate</th>
-				<th>Total data points</th>
-				<th>Avg ratio</th>
+				<th
+					class="sortable-th"
+					onclick={() => onSort?.('bunching_rate')}
+					aria-sort={sortCol === 'bunching_rate' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+				>Bunching rate{sortArrow('bunching_rate')}</th>
+				<th class="th-badge">Peak period</th>
+				<th
+					class="sortable-th"
+					onclick={() => onSort?.('total_headways')}
+					aria-sort={sortCol === 'total_headways' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+				>Data points{sortArrow('total_headways')}</th>
+				<th
+					class="sortable-th"
+					onclick={() => onSort?.('avg_hw_ratio')}
+					aria-sort={sortCol === 'avg_hw_ratio' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+				>Avg ratio{sortArrow('avg_hw_ratio')}</th>
 			</tr>
 		</thead>
 		<tbody>
 			{#if routes.length === 0}
 				<tr>
-					<td colspan="5" class="table-empty">
+					<td colspan="6" class="table-empty">
 						No route stats available for the selected filters.
 					</td>
 				</tr>
@@ -67,6 +106,13 @@
 								</span>
 							{/if}
 						</td>
+						<td>
+							{#if formatBucket(route.worst_bucket ?? null)}
+								<span class="bucket-badge">{formatBucket(route.worst_bucket ?? null)}</span>
+							{:else}
+								—
+							{/if}
+						</td>
 						<td>{formatHeadways(route.total_headways)}</td>
 						<td>{formatNumber(route.avg_hw_ratio)}</td>
 					</tr>
@@ -75,3 +121,29 @@
 		</tbody>
 	</table>
 </div>
+
+<style>
+	.sortable-th {
+		cursor: pointer;
+		user-select: none;
+	}
+	.sortable-th:hover {
+		background: var(--surface-2);
+	}
+	.th-badge {
+		white-space: nowrap;
+	}
+	.bucket-badge {
+		display: inline-flex;
+		align-items: center;
+		padding: 2px 8px;
+		border-radius: 999px;
+		border: 1px solid #d6dde6;
+		background: var(--surface-2);
+		font-size: 11px;
+		font-weight: 600;
+		letter-spacing: 0.05em;
+		color: var(--text-muted);
+		white-space: nowrap;
+	}
+</style>

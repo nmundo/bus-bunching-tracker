@@ -72,3 +72,20 @@ export const countHighRiskRoutes = (routes: RouteStat[]): number =>
 
 export const countRoutesWithData = (routes: RouteStat[]): number =>
 	routes.filter((route) => route.bunching_rate !== null).length
+
+export const computeWeightedRate = (
+	routes: RouteStat[],
+	field: 'super_bunching_rate' | 'gapping_rate'
+): number | null => {
+	let weightedTotal = 0
+	let totalHeadways = 0
+
+	for (const route of routes) {
+		const rate = route[field]
+		if (rate == null || route.total_headways === null || route.total_headways <= 0) continue
+		weightedTotal += rate * route.total_headways
+		totalHeadways += route.total_headways
+	}
+
+	return totalHeadways > 0 ? weightedTotal / totalHeadways : null
+}

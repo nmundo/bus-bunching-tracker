@@ -1,16 +1,22 @@
 <script lang="ts">
 	import { browser } from '$app/environment'
 	import RouteTable from '$components/RouteTable.svelte'
+	import BunchingChart from '$components/BunchingChart.svelte'
 	import type { RouteStat } from '$lib/types/frontend'
 	import {
 		computeWeightedNetworkAverage,
+		computeWeightedRate,
 		countHighRiskRoutes,
 		countRoutesWithData,
 		getWorstRoute
 	} from '$lib/ui/networkMetrics'
 	import {
 		applyRouteTableFilters,
+		parseSortParams,
+		sortRoutes,
 		type RouteRiskFilter,
+		type RouteSortCol,
+		type RouteSortDir,
 		withRouteTableFilterParams
 	} from '$lib/ui/routeTableFilters'
 	import { withRouteDetailFilterParams } from '$lib/ui/routeDetailUrl'
@@ -29,6 +35,10 @@
 	let risk = $state<RouteRiskFilter>('all')
 	let minData = $state(0)
 	let loading = $state(false)
+	let sortCol = $state<RouteSortCol>('bunching_rate')
+	let sortDir = $state<RouteSortDir>('desc')
+	let dataWatermark = $state<string | null>(null)
+	let networkHourly = $state<import('$lib/types/frontend').BucketStat[]>([])
 
 	const timeBuckets = ['AM_peak', 'Midday', 'PM_peak', 'Evening', 'Night']
 
@@ -43,6 +53,11 @@
 		q = data.q
 		risk = data.risk
 		minData = data.minData
+		const parsed = parseSortParams(new URLSearchParams(window.location.search))
+		sortCol = parsed.sortCol
+		sortDir = parsed.sortDir
+		dataWatermark = data.watermark ?? null
+		networkHourly = data.networkHourly ?? []
 	})
 
 	const tableFilters = $derived.by(() => ({
@@ -51,7 +66,8 @@
 		minData: Number.isFinite(minData) && minData > 0 ? Math.floor(minData) : 0
 	}))
 
-	const visibleRoutes = $derived.by(() => applyRouteTableFilters(routes, tableFilters))
+	const filteredRoutes = $derived.by(() => applyRouteTableFilters(routes, tableFilters))
+	const visibleRoutes = $derived.by(() => sortRoutes(filteredRoutes, sortCol, sortDir))
 
 	$effect(() => {
 		if (!browser) {
@@ -60,7 +76,8 @@
 
 		const next = withRouteTableFilterParams(
 			new URLSearchParams(window.location.search),
-			tableFilters
+			tableFilters,
+			{ sortCol, sortDir }
 		)
 		const nextQuery = next.toString()
 		const currentQuery = window.location.search.replace(/^\?/, '')
@@ -80,12 +97,16 @@
 		const networkAverage = computeWeightedNetworkAverage(routes)
 		const highRiskCount = countHighRiskRoutes(routes)
 		const withDataCount = countRoutesWithData(routes)
+		const networkSuperBunched = computeWeightedRate(routes, 'super_bunching_rate')
+		const networkGapping = computeWeightedRate(routes, 'gapping_rate')
 
 		return {
 			worstRouteLabel: worstRoute?.route_short_name || worstRoute?.route_id || '—',
 			worstRouteName: worstRoute?.route_long_name ?? 'No route data',
 			worstRate: formatPercent(worstRoute?.bunching_rate ?? null),
 			networkAverage: formatPercent(networkAverage),
+			networkSuperBunched: formatPercent(networkSuperBunched),
+			networkGapping: formatPercent(networkGapping),
 			highRiskCount,
 			withDataCount,
 			totalRoutes: routes.length
@@ -114,13 +135,46 @@
 		window.history.replaceState(window.history.state, '', nextUrl)
 	})
 
+	const handleSort = (col: RouteSortCol) => {
+		if (sortCol === col) {
+			sortDir = sortDir === 'asc' ? 'desc' : 'asc'
+		} else {
+			sortCol = col
+			sortDir = col === 'route' ? 'asc' : 'desc'
+		}
+	}
+
+	const relativeTime = (isoString: string | null): string => {
+		if (!isoString) return ''
+		const diff = Math.floor((Date.now() - new Date(isoString).getTime()) / 60_000)
+		if (diff < 1) return 'just now'
+		if (diff === 1) return '1 min ago'
+		if (diff < 60) return `${diff} min ago`
+		const hours = Math.floor(diff / 60)
+		return `${hours}h ${diff % 60}m ago`
+	}
+
+	let freshnessLabel = $state('')
+	$effect(() => {
+		if (!browser) return
+		freshnessLabel = relativeTime(dataWatermark)
+		const interval = setInterval(() => {
+			freshnessLabel = relativeTime(dataWatermark)
+		}, 60_000)
+		return () => clearInterval(interval)
+	})
+
 	const refresh = async () => {
 		loading = true
 		const params = new URLSearchParams()
 		if (serviceId) params.set('service_id', serviceId)
 		if (bucket) params.set('time_of_day_bucket', bucket)
-		const res = await fetch(`/api/routes?${params.toString()}`)
-		routes = res.ok ? await res.json() : []
+		const [routesRes, hourlyRes] = await Promise.all([
+			fetch(`/api/routes?${params.toString()}`),
+			fetch(`/api/network/hourly?${params.toString()}`)
+		])
+		routes = routesRes.ok ? await routesRes.json() : []
+		networkHourly = hourlyRes.ok ? await hourlyRes.json() : []
 		loading = false
 	}
 </script>
@@ -150,10 +204,10 @@
 					</select>
 				</label>
 				<button onclick={refresh} disabled={loading} aria-label="Submit filters">&rarr;</button>
-				<!-- {#if loading}
-					<small class="mono loading-indicator">Loading…</small>
-				{/if} -->
 			</div>
+			{#if freshnessLabel}
+				<small class="mono freshness-label">Data as of {freshnessLabel}</small>
+			{/if}
 		</article>
 		<article class="stat-card">
 			<p class="meta-line">Network avg bunching</p>
@@ -165,14 +219,28 @@
 			<h3>{dashboardMetrics.highRiskCount}</h3>
 			<p>Bunching rate at or above 20%</p>
 		</article>
+		<article class="stat-card">
+			<p class="meta-line">Network super-bunched</p>
+			<h3>{dashboardMetrics.networkSuperBunched}</h3>
+			<p>Buses within 1 min of each other</p>
+		</article>
+		<article class="stat-card">
+			<p class="meta-line">Network gapping</p>
+			<h3>{dashboardMetrics.networkGapping}</h3>
+			<p>Headways &gt;175% of scheduled</p>
+		</article>
 	</div>
+
+	{#if networkHourly.length > 0}
+		<BunchingChart data={networkHourly} title="Network bunching by hour" />
+	{/if}
 
 	<div class="panel">
 		<div class="section-head">
 			<div>
 				<p class="meta-line">Performance ranking</p>
 				<h3>Route bunching table</h3>
-				<small class="mono">Ordered by bunching rate · {visibleRoutes.length} shown</small>
+				<small class="mono">{visibleRoutes.length} routes shown</small>
 			</div>
 			<div class="controls-row">
 				<label class="control-field">
@@ -196,6 +264,14 @@
 				</label>
 			</div>
 		</div>
-		<RouteTable routes={visibleRoutes} {serviceId} {bucket} />
+		<RouteTable routes={visibleRoutes} {serviceId} {bucket} {sortCol} {sortDir} onSort={handleSort} />
 	</div>
 </section>
+
+<style>
+	.freshness-label {
+		color: var(--text-muted);
+		font-size: 11px;
+		margin-top: 4px;
+	}
+</style>

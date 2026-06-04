@@ -5,6 +5,9 @@ export type RouteStat = {
 	bunching_rate: number | null
 	total_headways: number | null
 	avg_hw_ratio: number | null
+	worst_bucket?: string | null
+	super_bunching_rate?: number | null
+	gapping_rate?: number | null
 }
 
 export type BucketStat = {

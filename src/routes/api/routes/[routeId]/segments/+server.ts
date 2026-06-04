@@ -7,6 +7,7 @@ type BuildSegmentsQueryInput = {
 	routeId: string
 	serviceId: string | null
 	bucket: string | null
+	directionId?: number | null
 }
 
 export type SegmentRow = {
@@ -39,7 +40,7 @@ type SegmentFeatureProperties = {
 	has_data: boolean
 }
 
-export const _buildSegmentsQuery = ({ routeId, serviceId, bucket }: BuildSegmentsQueryInput) => {
+export const _buildSegmentsQuery = ({ routeId, serviceId, bucket, directionId }: BuildSegmentsQueryInput) => {
 	const statsFilters: string[] = ['sbs.route_id = $1']
 	const paramsList: unknown[] = [routeId]
 
@@ -53,6 +54,13 @@ export const _buildSegmentsQuery = ({ routeId, serviceId, bucket }: BuildSegment
 	if (bucket) {
 		paramsList.push(bucket)
 		statsFilters.push(`sbs.time_of_day_bucket = $${paramsList.length}`)
+	}
+
+	const segmentFilters = ['s.route_id = $1']
+	if (directionId !== null && directionId !== undefined) {
+		paramsList.push(directionId)
+		statsFilters.push(`sbs.direction_id = $${paramsList.length}`)
+		segmentFilters.push(`s.direction_id = $${paramsList.length}`)
 	}
 
 	const sql = `
@@ -92,7 +100,7 @@ export const _buildSegmentsQuery = ({ routeId, serviceId, bucket }: BuildSegment
     LEFT JOIN filtered_stats ON filtered_stats.segment_id = s.id
     LEFT JOIN gtfs_stops from_stop ON from_stop.stop_id = s.from_stop_id
     LEFT JOIN gtfs_stops to_stop ON to_stop.stop_id = s.to_stop_id
-    WHERE s.route_id = $1
+    WHERE ${segmentFilters.join(' AND ')}
     ORDER BY
       COALESCE(s.direction_id, -1),
       s.from_stop_id NULLS LAST,
@@ -134,8 +142,10 @@ export const GET: RequestHandler = async ({ params, url }) => {
 	const routeId = params.routeId
 	const serviceId = url.searchParams.get('service_id')
 	const bucket = url.searchParams.get('time_of_day_bucket')
+	const dirRaw = url.searchParams.get('direction_id')
+	const directionId = dirRaw !== null && dirRaw !== '' ? parseInt(dirRaw, 10) : null
 
-	const { sql, paramsList } = _buildSegmentsQuery({ routeId, serviceId, bucket })
+	const { sql, paramsList } = _buildSegmentsQuery({ routeId, serviceId, bucket, directionId })
 	const result = await query<SegmentRow>(sql, paramsList)
 	return json(_buildSegmentFeatureCollection(result.rows))
 }

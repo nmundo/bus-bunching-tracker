@@ -9,8 +9,18 @@ export const load: PageServerLoad = async ({ fetch, url }) => {
 	if (serviceId) params.set('service_id', serviceId)
 	if (bucket) params.set('time_of_day_bucket', bucket)
 
-	const res = await fetch(`/api/routes?${params.toString()}`)
-	const routes = res.ok ? await res.json() : []
+	const hourlyParams = new URLSearchParams()
+	if (serviceId) hourlyParams.set('service_id', serviceId)
 
-	return { routes, serviceId, bucket, ...tableFilters }
+	const [routesRes, hourlyRes, statusRes] = await Promise.all([
+		fetch(`/api/routes?${params.toString()}`),
+		fetch(`/api/network/hourly?${hourlyParams.toString()}`),
+		fetch('/api/status')
+	])
+
+	const routes = routesRes.ok ? await routesRes.json() : []
+	const networkHourly = hourlyRes.ok ? await hourlyRes.json() : []
+	const status = statusRes.ok ? await statusRes.json() : {}
+
+	return { routes, networkHourly, watermark: status.watermark ?? null, serviceId, bucket, ...tableFilters }
 }

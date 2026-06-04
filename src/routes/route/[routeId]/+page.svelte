@@ -15,6 +15,7 @@
 
 	let serviceId = $derived(data.serviceId)
 	let bucket = $derived(data.bucket)
+	let directionId = $state(data.directionId ?? '')
 	let stats = $derived<PageData['stats']>(data.stats)
 	let segments = $derived<PageData['segments']>(data.segments)
 	let loading = $state(false)
@@ -36,6 +37,11 @@
 			serviceId,
 			bucket
 		})
+		if (directionId !== '') {
+			next.set('direction_id', directionId)
+		} else {
+			next.delete('direction_id')
+		}
 		const nextQuery = next.toString()
 		const currentQuery = window.location.search.replace(/^\?/, '')
 
@@ -55,10 +61,12 @@
 		const statsParams = new URLSearchParams()
 		if (serviceId) statsParams.set('service_id', serviceId)
 		if (bucket) statsParams.set('time_of_day_bucket', bucket)
+		if (directionId !== '') statsParams.set('direction_id', directionId)
 
 		const segmentsParams = new URLSearchParams()
 		if (serviceId) segmentsParams.set('service_id', serviceId)
 		if (bucket) segmentsParams.set('time_of_day_bucket', bucket)
+		if (directionId !== '') segmentsParams.set('direction_id', directionId)
 
 		const [statsRes, segmentsRes] = await Promise.all([
 			fetch(`/api/routes/${data.routeId}/stats?${statsParams.toString()}`),
@@ -98,6 +106,14 @@
 					{#each timeBuckets as option (option)}
 						<option value={option}>{formatBucketLabel(option)}</option>
 					{/each}
+				</select>
+			</label>
+			<label class="control-field">
+				<span>Direction</span>
+				<select bind:value={directionId}>
+					<option value="">both directions</option>
+					<option value="0">Direction 0</option>
+					<option value="1">Direction 1</option>
 				</select>
 			</label>
 		</div>

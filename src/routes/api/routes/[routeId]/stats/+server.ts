@@ -6,12 +6,14 @@ import { appendServiceFilter } from '$server/serviceFilter'
 type BuildHourlyBucketsQueryInput = {
 	routeId: string
 	serviceId: string | null
+	directionId?: number | null
 }
 
 type BuildSummaryQueryInput = {
 	routeId: string
 	serviceId: string | null
 	bucket: string | null
+	directionId?: number | null
 }
 
 export const _buildHourlyBucketsQuery = ({ routeId, serviceId }: BuildHourlyBucketsQueryInput) => {
@@ -54,7 +56,7 @@ export const _buildHourlyBucketsQuery = ({ routeId, serviceId }: BuildHourlyBuck
 	return { sql, paramsList }
 }
 
-export const _buildSummaryQuery = ({ routeId, serviceId, bucket }: BuildSummaryQueryInput) => {
+export const _buildSummaryQuery = ({ routeId, serviceId, bucket, directionId }: BuildSummaryQueryInput) => {
 	const filters: string[] = ['rbs.route_id = $1']
 	const paramsList: unknown[] = [routeId]
 
@@ -68,6 +70,11 @@ export const _buildSummaryQuery = ({ routeId, serviceId, bucket }: BuildSummaryQ
 	if (bucket) {
 		paramsList.push(bucket)
 		filters.push(`rbs.time_of_day_bucket = $${paramsList.length}`)
+	}
+
+	if (directionId !== null && directionId !== undefined) {
+		paramsList.push(directionId)
+		filters.push(`rbs.direction_id = $${paramsList.length}`)
 	}
 
 	const sql = `
@@ -92,6 +99,8 @@ export const GET: RequestHandler = async ({ params, url }) => {
 	const routeId = params.routeId
 	const serviceId = url.searchParams.get('service_id')
 	const bucket = url.searchParams.get('time_of_day_bucket')
+	const dirRaw = url.searchParams.get('direction_id')
+	const directionId = dirRaw !== null && dirRaw !== '' ? parseInt(dirRaw, 10) : null
 
 	const routeResult = await query(
 		`SELECT route_id, route_short_name, route_long_name FROM gtfs_routes WHERE route_id = $1`,
@@ -101,12 +110,14 @@ export const GET: RequestHandler = async ({ params, url }) => {
 	const { sql: summarySql, paramsList: summaryParams } = _buildSummaryQuery({
 		routeId,
 		serviceId,
-		bucket
+		bucket,
+		directionId
 	})
 
 	const { sql: bucketsSql, paramsList: bucketParams } = _buildHourlyBucketsQuery({
 		routeId,
-		serviceId
+		serviceId,
+		directionId: null
 	})
 
 	const [summaryResult, bucketsResult] = await Promise.all([
