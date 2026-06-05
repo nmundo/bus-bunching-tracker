@@ -19,12 +19,17 @@
 -- Remove exact duplicates (same route, stop, vehicle, timestamp) that may have
 -- been produced by the duplicate-pattern-stop issue below.  Keep the lowest id
 -- (earliest insertion) for each group.
-delete from stop_arrivals
-where id not in (
-  select min(id)
-  from stop_arrivals
-  group by route_id, stop_id, vid, arrival_time
-);
+--
+-- Uses a self-join DELETE rather than NOT IN (SELECT min(id) ...) because the
+-- NOT IN form does a nested-loop scan that is O(n²) and unworkable on tables
+-- larger than a few hundred thousand rows.
+delete from stop_arrivals a
+using stop_arrivals b
+where a.route_id     = b.route_id
+  and a.stop_id      = b.stop_id
+  and a.vid          = b.vid
+  and a.arrival_time = b.arrival_time
+  and a.id           > b.id;
 
 create unique index if not exists stop_arrivals_dedup_idx
   on stop_arrivals (route_id, stop_id, vid, arrival_time);
@@ -32,12 +37,12 @@ create unique index if not exists stop_arrivals_dedup_idx
 -- ── 2. bt_pattern_stops deduplication + unique constraint ───────────────────
 
 -- Keep the first row (by id) for each (pid, seq) pair and drop the rest.
-delete from bt_pattern_stops
-where id not in (
-  select distinct on (pid, seq) id
-  from bt_pattern_stops
-  order by pid, seq, id
-);
+-- Self-join form avoids the NOT IN / subquery nested-loop problem at scale.
+delete from bt_pattern_stops a
+using bt_pattern_stops b
+where a.pid = b.pid
+  and a.seq = b.seq
+  and a.id  > b.id;
 
 create unique index if not exists bt_pattern_stops_pid_seq_idx
   on bt_pattern_stops (pid, seq);
