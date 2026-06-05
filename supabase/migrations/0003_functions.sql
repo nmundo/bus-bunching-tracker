@@ -545,6 +545,30 @@ begin
 end;
 $$;
 
+-- Lookup: return the CTA direction label (e.g. "Northbound") for each GTFS direction_id of a route.
+-- Joins through the first terminal stop of each direction → stop_map → bt_pattern_stops → bt_patterns,
+-- which is the only reliable path because shared stops in stop_map can carry the wrong dir label.
+create or replace function get_route_directions(p_route_id text)
+returns table (direction_id int, dir text)
+language sql
+stable
+as $$
+  select distinct on (rss_first.direction_id)
+    rss_first.direction_id,
+    bp.dir
+  from (
+    select distinct on (direction_id) direction_id, stop_id
+    from route_stop_sequences
+    where route_id = p_route_id
+    order by direction_id, stop_sequence
+  ) rss_first
+  join stop_map sm on sm.gtfs_stop_id = rss_first.stop_id
+  join bt_pattern_stops bps on bps.stpid = sm.stpid and bps.seq <= 3
+  join bt_patterns bp on bp.pid = bps.pid
+  join route_map rm on rm.rt = bp.rt and rm.gtfs_route_id = p_route_id
+  order by rss_first.direction_id;
+$$;
+
 -- Stats: wrappers so callers can refresh individual tables without knowing the internals
 create or replace function refresh_route_bunching_stats(p_days integer default 30)
 returns void

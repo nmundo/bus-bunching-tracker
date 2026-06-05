@@ -21,6 +21,7 @@
 	} from '$lib/ui/routeTableFilters'
 	import { withRouteDetailFilterParams } from '$lib/ui/routeDetailUrl'
 	import type { PageData } from './$types'
+	import { getRoutes, getNetworkHourly } from './data.remote'
 
 	type Props = {
 		data: PageData
@@ -166,112 +167,124 @@
 
 	const refresh = async () => {
 		loading = true
-		const params = new URLSearchParams()
-		if (serviceId) params.set('service_id', serviceId)
-		if (bucket) params.set('time_of_day_bucket', bucket)
-		const [routesRes, hourlyRes] = await Promise.all([
-			fetch(`/api/routes?${params.toString()}`),
-			fetch(`/api/network/hourly?${params.toString()}`)
-		])
-		routes = routesRes.ok ? await routesRes.json() : []
-		networkHourly = hourlyRes.ok ? await hourlyRes.json() : []
+		const rq = getRoutes({ serviceId, bucket })
+		const hq = getNetworkHourly({ serviceId })
+		await Promise.all([rq.refresh(), hq.refresh()])
+		routes = rq.current ?? []
+		networkHourly = hq.current ?? []
 		loading = false
 	}
 </script>
 
 <section class="grid">
-	<div class="kpi-grid">
-		<article class="stat-card">
-			<div>
-				<p class="meta-line">Network overview</p>
-			</div>
-			<div class="controls-row">
-				<label class="control-field">
-					<span>Service type</span>
-					<select bind:value={serviceId}>
-						<option value="">all services</option>
-						<option value="weekday">weekday</option>
-						<option value="saturday">saturday</option>
-						<option value="sunday">sunday</option>
-					</select>
-				</label>
-				<label class="control-field">
-					<span>Time bucket</span>
-					<select bind:value={bucket}>
-						{#each timeBuckets as option (option)}
-							<option value={option}>{formatBucketLabel(option)}</option>
-						{/each}
-					</select>
-				</label>
-				<button onclick={refresh} disabled={loading} aria-label="Submit filters">&rarr;</button>
-			</div>
+	<div class="page-toolbar">
+		<div class="toolbar-identity">
+			<p class="meta-line">Network overview</p>
 			{#if freshnessLabel}
 				<small class="mono freshness-label">Data as of {freshnessLabel}</small>
 			{/if}
-		</article>
-		<article class="stat-card">
-			<p class="meta-line">Network avg bunching</p>
-			<h3>{dashboardMetrics.networkAverage}</h3>
-			<p>Weighted by observed headways</p>
-		</article>
-		<article class="stat-card">
-			<p class="meta-line">High-risk routes</p>
-			<h3>{dashboardMetrics.highRiskCount}</h3>
-			<p>Bunching rate at or above 20%</p>
-		</article>
-		<article class="stat-card">
-			<p class="meta-line">Network super-bunched</p>
-			<h3>{dashboardMetrics.networkSuperBunched}</h3>
-			<p>Buses within 1 min of each other</p>
-		</article>
-		<article class="stat-card">
-			<p class="meta-line">Network gapping</p>
-			<h3>{dashboardMetrics.networkGapping}</h3>
-			<p>Headways &gt;175% of scheduled</p>
-		</article>
+		</div>
+		<div class="controls-row">
+			<label class="control-field">
+				<span>Service type</span>
+				<select bind:value={serviceId}>
+					<option value="">all services</option>
+					<option value="weekday">weekday</option>
+					<option value="saturday">saturday</option>
+					<option value="sunday">sunday</option>
+				</select>
+			</label>
+			<label class="control-field">
+				<span>Time bucket</span>
+				<select bind:value={bucket}>
+					{#each timeBuckets as option (option)}
+						<option value={option}>{formatBucketLabel(option)}</option>
+					{/each}
+				</select>
+			</label>
+			<button onclick={refresh} disabled={loading} aria-label="Refresh data">&rarr;</button>
+		</div>
 	</div>
 
-	{#if networkHourly.length > 0}
-		<BunchingChart data={networkHourly} title="Network bunching by hour" />
-	{/if}
-
-	<div class="panel">
-		<div class="section-head">
-			<div>
-				<p class="meta-line">Performance ranking</p>
-				<h3>Route bunching table</h3>
-				<small class="mono">{visibleRoutes.length} routes shown</small>
-			</div>
-			<div class="controls-row">
-				<label class="control-field">
-					<span>Search route</span>
-					<input
-						type="search"
-						placeholder="Route number or name"
-						bind:value={q}
-						aria-label="Search routes"
-					/>
-				</label>
-				<label class="control-field">
-					<span>Risk level</span>
-					<select bind:value={risk} aria-label="Filter by risk level">
-						<option value="all">all risk levels</option>
-						<option value="high">high</option>
-						<option value="medium">medium</option>
-						<option value="low">low</option>
-						<option value="unknown">unknown</option>
-					</select>
-				</label>
-			</div>
+	<div class:stale={loading}>
+		<div class="kpi-grid">
+			<article class="stat-card">
+				<p class="meta-line">Network avg bunching</p>
+				<h3>{dashboardMetrics.networkAverage}</h3>
+				<p>Weighted by observed headways</p>
+			</article>
+			<article class="stat-card">
+				<p class="meta-line">High-risk routes</p>
+				<h3>{dashboardMetrics.highRiskCount}</h3>
+				<p>Bunching rate at or above 20%</p>
+			</article>
+			<article class="stat-card">
+				<p class="meta-line">Network super-bunched</p>
+				<h3>{dashboardMetrics.networkSuperBunched}</h3>
+				<p>Buses within 1 min of each other</p>
+			</article>
+			<article class="stat-card">
+				<p class="meta-line">Network gapping</p>
+				<h3>{dashboardMetrics.networkGapping}</h3>
+				<p>Headways &gt;175% of scheduled</p>
+			</article>
 		</div>
-		<RouteTable routes={visibleRoutes} {serviceId} {bucket} {sortCol} {sortDir} onSort={handleSort} />
+
+		{#if networkHourly.length > 0}
+			<div style="margin-top: 24px">
+				<BunchingChart data={networkHourly} title="Network bunching by hour" />
+			</div>
+		{/if}
+
+		<div class="panel" style="margin-top: 24px">
+			<div class="section-head">
+				<div>
+					<p class="meta-line">Performance ranking</p>
+					<h3>Route bunching table</h3>
+					<small class="mono">{visibleRoutes.length} routes shown</small>
+				</div>
+				<div class="controls-row">
+					<label class="control-field">
+						<span>Search route</span>
+						<input
+							type="search"
+							placeholder="Route number or name"
+							bind:value={q}
+							aria-label="Search routes"
+						/>
+					</label>
+					<label class="control-field">
+						<span>Risk level</span>
+						<select bind:value={risk} aria-label="Filter by risk level">
+							<option value="all">all risk levels</option>
+							<option value="high">high</option>
+							<option value="medium">medium</option>
+							<option value="low">low</option>
+							<option value="unknown">unknown</option>
+						</select>
+					</label>
+				</div>
+			</div>
+			<RouteTable routes={visibleRoutes} {serviceId} {bucket} {sortCol} {sortDir} onSort={handleSort} />
+		</div>
 	</div>
 </section>
 
 <style>
+	.page-toolbar {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: flex-end;
+		justify-content: space-between;
+		gap: 12px 16px;
+	}
+	.toolbar-identity {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+	}
 	.freshness-label {
 		color: var(--text-muted);
 		font-size: 11px;
-		margin-top: 4px;
 	}
 </style>

@@ -5,6 +5,7 @@
 	import RouteStatsSummary from '$components/RouteStatsSummary.svelte'
 	import { withRouteDetailFilterParams } from '$lib/ui/routeDetailUrl'
 	import { classifyRisk, type RiskLevel } from '$lib/ui/networkMetrics'
+	import { getRouteStats, getRouteSegments } from './data.remote'
 	import type { PageData } from './$types'
 
 	type Props = {
@@ -13,12 +14,26 @@
 
 	let { data }: Props = $props()
 
-	let serviceId = $derived(data.serviceId)
-	let bucket = $derived(data.bucket)
+	let serviceId = $state(data.serviceId)
+	let bucket = $state(data.bucket)
+	let stats = $state<PageData['stats']>(data.stats)
+	let segments = $state<PageData['segments']>(data.segments)
+
 	let directionId = $state(data.directionId ?? '')
-	let stats = $derived<PageData['stats']>(data.stats)
-	let segments = $derived<PageData['segments']>(data.segments)
 	let loading = $state(false)
+
+	$effect(() => {
+		serviceId = data.serviceId
+		bucket = data.bucket
+		directionId = data.directionId ?? ''
+		stats = data.stats
+		segments = data.segments
+	})
+
+	const directions = $derived<Record<string, string>>(data.directions ?? {})
+	const dirLabel = (id: string) => directions[id] ?? `Direction ${id}`
+
+	const chartTitle = $derived(`Route ${stats?.route?.route_short_name ?? ''} · bunching by hour`)
 
 	const timeBuckets = ['AM_peak', 'Midday', 'PM_peak', 'Evening', 'Night']
 	const formatPercent = (value: number | null | undefined) =>
@@ -58,23 +73,11 @@
 
 	const refresh = async () => {
 		loading = true
-		const statsParams = new URLSearchParams()
-		if (serviceId) statsParams.set('service_id', serviceId)
-		if (bucket) statsParams.set('time_of_day_bucket', bucket)
-		if (directionId !== '') statsParams.set('direction_id', directionId)
-
-		const segmentsParams = new URLSearchParams()
-		if (serviceId) segmentsParams.set('service_id', serviceId)
-		if (bucket) segmentsParams.set('time_of_day_bucket', bucket)
-		if (directionId !== '') segmentsParams.set('direction_id', directionId)
-
-		const [statsRes, segmentsRes] = await Promise.all([
-			fetch(`/api/routes/${data.routeId}/stats?${statsParams.toString()}`),
-			fetch(`/api/routes/${data.routeId}/segments?${segmentsParams.toString()}`)
-		])
-
-		stats = statsRes.ok ? await statsRes.json() : null
-		segments = segmentsRes.ok ? await segmentsRes.json() : null
+		const sq = getRouteStats({ routeId: data.routeId, serviceId, bucket, directionId })
+		const sgq = getRouteSegments({ routeId: data.routeId, serviceId, bucket, directionId })
+		await Promise.all([sq.refresh(), sgq.refresh()])
+		stats = sq.current ?? null
+		segments = sgq.current ?? null
 		loading = false
 	}
 
@@ -112,71 +115,81 @@
 				<span>Direction</span>
 				<select bind:value={directionId}>
 					<option value="">both directions</option>
-					<option value="0">Direction 0</option>
-					<option value="1">Direction 1</option>
+					<option value="0">{dirLabel('0')}</option>
+					<option value="1">{dirLabel('1')}</option>
 				</select>
 			</label>
 		</div>
 	</div>
 
-	{#if stats?.summary}
-		<RouteStatsSummary summary={{ ...stats.summary, route: stats.route }} />
-	{/if}
+	<div class:stale={loading}>
+		{#if stats?.summary}
+			<RouteStatsSummary summary={{ ...stats.summary, route: stats.route }} />
+		{/if}
 
-	<div class="grid two">
-		<div class="panel">
-			<div class="section-head">
-				<div>
-					<p class="meta-line">Segment ranking</p>
-					<h3>Worst segments</h3>
+		<div class="grid two" style="margin-top: 24px">
+			<div class="panel">
+				<div class="section-head">
+					<div>
+						<p class="meta-line">Segment ranking</p>
+						<h3>Worst segments</h3>
+					</div>
+				</div>
+				<div class="table-wrap segments-table-wrap">
+					<table class="table">
+						<thead>
+							<tr>
+								<th>Segment</th>
+								<th>Bunching rate</th>
+								<th>Headways</th>
+							</tr>
+						</thead>
+						<tbody>
+							{#if !segments}
+								<tr>
+									<td colspan="3" class="table-empty">No segments loaded for these filters.</td>
+								</tr>
+							{:else}
+								{#each worstSegments as feature, index (feature.properties?.segment_id ?? index)}
+									<tr>
+										<td class="segment-cell">
+											<div class="segment-stop-row">
+												<span class="segment-stop-label">From</span>
+												<span class="segment-stop-name"
+													>{feature.properties?.from_stop_name ?? '—'}</span
+												>
+											</div>
+											<div class="segment-stop-row">
+												<span class="segment-stop-label">To</span>
+												<span class="segment-stop-name"
+													>{feature.properties?.to_stop_name ?? '—'}</span
+												>
+											</div>
+										</td>
+										<td>
+											{#if feature.properties?.bunching_rate === undefined || feature.properties?.bunching_rate === null}
+												—
+											{:else}
+												<span
+													class={`risk-pill ${getRiskLevel(feature.properties?.bunching_rate)}`}
+												>
+													{formatPercent(feature.properties?.bunching_rate)}
+												</span>
+											{/if}
+										</td>
+										<td>{formatHeadways(feature.properties?.total_headways)}</td>
+									</tr>
+								{/each}
+							{/if}
+						</tbody>
+					</table>
 				</div>
 			</div>
-			<div class="table-wrap segments-table-wrap">
-				<table class="table">
-					<thead>
-						<tr>
-							<th>Segment</th>
-							<th>Bunching rate</th>
-							<th>Total headways</th>
-						</tr>
-					</thead>
-					<tbody>
-						{#if !segments}
-							<tr>
-								<td colspan="3" class="table-empty">No segments loaded for these filters.</td>
-							</tr>
-						{:else}
-							{#each worstSegments as feature, index (feature.properties?.segment_id ?? index)}
-								<tr>
-									<td class="segment-cell">
-										<div class="segment-stop-row">
-											<span class="segment-stop-label">From</span>
-											<span class="segment-stop-name">{feature.properties?.from_stop_name ?? '—'}</span>
-										</div>
-										<div class="segment-stop-row">
-											<span class="segment-stop-label">To</span>
-											<span class="segment-stop-name">{feature.properties?.to_stop_name ?? '—'}</span>
-										</div>
-									</td>
-									<td>
-										{#if feature.properties?.bunching_rate === undefined || feature.properties?.bunching_rate === null}
-											—
-										{:else}
-											<span class={`risk-pill ${getRiskLevel(feature.properties?.bunching_rate)}`}>
-												{formatPercent(feature.properties?.bunching_rate)}
-											</span>
-										{/if}
-									</td>
-									<td>{formatHeadways(feature.properties?.total_headways)}</td>
-								</tr>
-							{/each}
-						{/if}
-					</tbody>
-				</table>
-			</div>
+			<RouteMap segmentsGeoJson={segments} selectedTimeBucket={bucket} />
 		</div>
-		<RouteMap segmentsGeoJson={segments} selectedTimeBucket={bucket} />
-	</div>
 
-	<BunchingChart data={stats?.buckets ?? []} />
+		<div style="margin-top: 24px">
+			<BunchingChart data={stats?.buckets ?? []} title={chartTitle} />
+		</div>
+	</div>
 </section>

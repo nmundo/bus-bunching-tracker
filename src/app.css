@@ -262,6 +262,12 @@ input:focus-visible {
 	transition: opacity 0.2s ease;
 }
 
+.stale {
+	opacity: 0.45;
+	pointer-events: none;
+	transition: opacity 0.25s ease;
+}
+
 .kpi-grid {
 	display: grid;
 	gap: 14px;

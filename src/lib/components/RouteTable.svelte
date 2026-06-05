@@ -28,9 +28,9 @@
 	const getRiskLevel = (value: number | null): RiskLevel => classifyRisk(value)
 	const getRouteHref = (routeId: string) => buildRouteDetailHref(routeId, { serviceId, bucket })
 
-	const sortArrow = (col: RouteSortCol) => {
-		if (col !== sortCol) return ''
-		return sortDir === 'asc' ? ' ↑' : ' ↓'
+	const sortIcon = (col: RouteSortCol) => {
+		if (col !== sortCol) return '↕'
+		return sortDir === 'asc' ? '↑' : '↓'
 	}
 
 	const BUCKET_LABELS: Record<string, string> = {
@@ -51,25 +51,43 @@
 				<th
 					class="sortable-th"
 					onclick={() => onSort?.('route')}
-					aria-sort={sortCol === 'route' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
-				>Route{sortArrow('route')}</th>
+					aria-sort={sortCol === 'route'
+						? sortDir === 'asc'
+							? 'ascending'
+							: 'descending'
+						: 'none'}>Route<span class="sort-icon">{sortIcon('route')}</span></th
+				>
 				<th>Name</th>
 				<th
 					class="sortable-th"
 					onclick={() => onSort?.('bunching_rate')}
-					aria-sort={sortCol === 'bunching_rate' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
-				>Bunching rate{sortArrow('bunching_rate')}</th>
+					aria-sort={sortCol === 'bunching_rate'
+						? sortDir === 'asc'
+							? 'ascending'
+							: 'descending'
+						: 'none'}>Bunching rate<span class="sort-icon">{sortIcon('bunching_rate')}</span></th
+				>
 				<th class="th-badge">Peak period</th>
 				<th
 					class="sortable-th"
 					onclick={() => onSort?.('total_headways')}
-					aria-sort={sortCol === 'total_headways' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
-				>Data points{sortArrow('total_headways')}</th>
+					aria-sort={sortCol === 'total_headways'
+						? sortDir === 'asc'
+							? 'ascending'
+							: 'descending'
+						: 'none'}>Headways<span class="sort-icon">{sortIcon('total_headways')}</span></th
+				>
 				<th
 					class="sortable-th"
 					onclick={() => onSort?.('avg_hw_ratio')}
-					aria-sort={sortCol === 'avg_hw_ratio' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
-				>Avg ratio{sortArrow('avg_hw_ratio')}</th>
+					aria-sort={sortCol === 'avg_hw_ratio'
+						? sortDir === 'asc'
+							? 'ascending'
+							: 'descending'
+						: 'none'}
+					title="Average ratio of actual headway to scheduled headway. 1.0 = on schedule; below 1.0 = buses running closer together than planned."
+					>HW ratio<span class="sort-icon">{sortIcon('avg_hw_ratio')}</span></th
+				>
 			</tr>
 		</thead>
 		<tbody>
@@ -126,9 +144,22 @@
 	.sortable-th {
 		cursor: pointer;
 		user-select: none;
+		white-space: nowrap;
 	}
 	.sortable-th:hover {
 		background: var(--surface-2);
+	}
+	.sort-icon {
+		display: inline-block;
+		margin-left: 5px;
+		font-size: 9px;
+		opacity: 0.35;
+		vertical-align: middle;
+	}
+	.sortable-th[aria-sort='ascending'] .sort-icon,
+	.sortable-th[aria-sort='descending'] .sort-icon {
+		opacity: 1;
+		color: var(--text-strong);
 	}
 	.th-badge {
 		white-space: nowrap;
