@@ -32,8 +32,8 @@ const directionToId = (dir: string | null) => {
 	return null
 }
 
-// Use the precomputed distance_feet column added in migration 0013 instead of
-// running ST_LineLocatePoint / ST_Length on every 5-minute cycle.  Stops whose
+// Use the precomputed distance_feet column instead of running
+// ST_LineLocatePoint / ST_Length on every 5-minute cycle.  Stops whose
 // distance_feet is still null (added since the last sync) are excluded; they
 // will be picked up after the next nightly sync populates the column.
 const loadPatternStops = async (client: import('pg').PoolClient) => {
@@ -97,8 +97,8 @@ const loadPatternDirections = async (client: import('pg').PoolClient) => {
 //
 // Without this, every new run resets lastStopIndex to -1, causing the while
 // loop to re-insert arrivals for all stops from 0 to the current position.
-// The unique index on stop_arrivals (migration 0013) provides a second line of
-// defence, but seeding prevents the spurious inserts in the first place.
+// The unique index on stop_arrivals provides a second line of defence, but
+// seeding prevents the spurious inserts in the first place.
 const loadVehicleStates = async (
 	client: import('pg').PoolClient,
 	patternStops: Map<string, PatternStop[]>
@@ -157,35 +157,40 @@ const setWatermark = async (client: import('pg').PoolClient, watermark: Date) =>
 	)
 }
 
-// Each row is: [route_id, direction_id, stop_id, vid, rt, pid, arrival_time, pdist_feet]
+type StopArrivalRow = {
+	route_id: string
+	direction_id: number | null
+	stop_id: string
+	vid: string
+	rt: string
+	pid: string
+	arrival_time: Date
+	pdist_feet: number
+}
+
 const ARRIVAL_COLUMNS = 8
+const ARRIVAL_INSERT_BATCH_ROWS = 500
 
-// PostgreSQL's extended-query Bind message allows up to 65 535 parameters.
-// Use a conservative batch size that keeps params well below that ceiling and
-// avoids building excessively large query strings on large backlogs.
-const ARRIVAL_INSERT_BATCH_ROWS = 500 // 500 × 8 = 4 000 params per statement
+export const _buildStopArrivalsInsertSql = (rowCount: number): string => {
+	const placeholders = Array.from({ length: rowCount }, (_, i) => {
+		const o = i * ARRIVAL_COLUMNS
+		return `($${o + 1}, $${o + 2}, $${o + 3}, $${o + 4}, $${o + 5}, $${o + 6}, $${o + 7}, $${o + 8})`
+	}).join(', ')
+	return `insert into stop_arrivals
+         (route_id, direction_id, stop_id, vid, rt, pid, arrival_time, pdist_feet)
+       values ${placeholders}
+       on conflict (route_id, stop_id, vid, arrival_time) do nothing`
+}
 
-const insertArrivals = async (client: import('pg').PoolClient, rows: unknown[][]) => {
+export const _flattenStopArrivalRows = (rows: StopArrivalRow[]): unknown[] =>
+	rows.flatMap((r) => [r.route_id, r.direction_id, r.stop_id, r.vid, r.rt, r.pid, r.arrival_time, r.pdist_feet])
+
+const insertArrivals = async (client: import('pg').PoolClient, rows: StopArrivalRow[]) => {
 	if (rows.length === 0) return
 
 	for (let offset = 0; offset < rows.length; offset += ARRIVAL_INSERT_BATCH_ROWS) {
 		const batch = rows.slice(offset, offset + ARRIVAL_INSERT_BATCH_ROWS)
-		const placeholders = batch
-			.map((_, i) => {
-				const o = i * ARRIVAL_COLUMNS
-				return `($${o + 1},$${o + 2},$${o + 3},$${o + 4},$${o + 5},$${o + 6},$${o + 7},$${o + 8})`
-			})
-			.join(', ')
-
-		// ON CONFLICT now names the unique index added in migration 0013, making the
-		// deduplication effective instead of a no-op.
-		await client.query(
-			`insert into stop_arrivals
-         (route_id, direction_id, stop_id, vid, rt, pid, arrival_time, pdist_feet)
-       values ${placeholders}
-       on conflict (route_id, stop_id, vid, arrival_time) do nothing`,
-			batch.flat()
-		)
+		await client.query(_buildStopArrivalsInsertSql(batch.length), _flattenStopArrivalRows(batch))
 	}
 }
 
@@ -231,7 +236,7 @@ export const runArrivals = async () => {
 		// were already recorded in previous runs.
 		const states = await loadVehicleStates(client, patternStops)
 
-		const arrivalRows: unknown[][] = []
+		const arrivalRows: StopArrivalRow[] = []
 
 		for (const row of result.rows) {
 			if (!row.pid || row.pdist_feet === null) continue
@@ -255,16 +260,16 @@ export const runArrivals = async () => {
 			while (nextIndex < stops.length && row.pdist_feet >= stops[nextIndex].distance_feet) {
 				const nextStop = stops[nextIndex]
 				if (routeId && nextStop.gtfs_stop_id) {
-					arrivalRows.push([
-						routeId,
-						directionId,
-						nextStop.gtfs_stop_id,
-						row.vid,
-						row.rt,
-						row.pid,
-						row.tmstmp,
-						row.pdist_feet
-					])
+					arrivalRows.push({
+						route_id: routeId,
+						direction_id: directionId,
+						stop_id: nextStop.gtfs_stop_id,
+						vid: row.vid,
+						rt: row.rt,
+						pid: row.pid,
+						arrival_time: row.tmstmp,
+						pdist_feet: row.pdist_feet
+					})
 				}
 				state.lastStopIndex = nextIndex
 				nextIndex += 1

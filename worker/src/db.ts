@@ -1,4 +1,4 @@
-import pg from 'pg'
+import pg, { type QueryResultRow } from 'pg'
 import 'dotenv/config'
 
 const { Pool } = pg
@@ -16,7 +16,7 @@ export const getPool = () => {
 	return pool
 }
 
-export const query = async <T = unknown>(text: string, params: unknown[] = []) => {
+export const query = async <T extends QueryResultRow>(text: string, params: unknown[] = []) => {
 	const client = await getPool().connect()
 	try {
 		const result = await client.query<T>(text, params)

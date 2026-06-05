@@ -28,12 +28,10 @@ export const runEnrich = async ({
 	}
 
 	// Only rebuild the stats tables when there is actually new data to reflect.
-	// Each refresh does a full DELETE + INSERT so skipping it on idle cycles
-	// avoids unnecessary writes on quiet periods.
+	// refresh_bunching_stats refreshes route, segment, and hourly stats in one
+	// temp-table scan, so a single call covers all three tables.
 	if (totalInserted > 0) {
-		await query('select refresh_route_bunching_stats(30)')
-		await query('select refresh_segment_bunching_stats(30)')
-		await query('select refresh_route_hourly_bunching_stats(30)')
+		await query('select refresh_bunching_stats(30)')
 		console.log(`Enrichment and stats refresh complete (${totalInserted} rows inserted)`)
 	} else {
 		console.log('No new rows to enrich, skipping stats refresh')

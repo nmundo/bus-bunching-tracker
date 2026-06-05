@@ -92,8 +92,8 @@ const upsertPatterns = async (patterns: Pattern[], knownStops: Set<string>, rout
 		patternValues
 	)
 
-	// Upsert pattern stops per pattern.  The unique index on (pid, seq) added in
-	// migration 0013 makes the conflict target explicit so repeated syncs update
+	// Upsert pattern stops per pattern.  The unique index on (pid, seq)
+	// makes the conflict target explicit so repeated syncs update
 	// existing rows instead of accumulating duplicates.
 	for (const pattern of patterns) {
 		const stopPoints = pattern.pt.filter((pt) => pt.stpid && knownStops.has(pt.stpid))

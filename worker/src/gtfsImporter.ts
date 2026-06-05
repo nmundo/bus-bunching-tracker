@@ -26,22 +26,12 @@ const toDate = (value: string | undefined) => {
 }
 
 /**
- * Normalise a GTFS time string to a Postgres-compatible HH:MM:SS value.
+ * Normalise a GTFS time string to a zero-padded HH:MM:SS value.
  *
- * GTFS deliberately allows times ≥ 24:00 for overnight/next-day trips
- * (e.g. "25:30:00" means 01:30 AM the following service day). Postgres `time`
- * columns reject values ≥ 24:00, so we wrap the hours with % 24 before
- * storing and log a warning so the data loss is visible.
- *
- * Impact of wrapping: downstream schedule logic uses departure_time only for
- * relative bin comparisons and lag-based headway deltas within the same
- * (route, stop, service_id, time_bin) partition. Trips past midnight wrap
- * into early-morning bins, which is where they belong schedule-wise, so the
- * computed headways remain correct for the vast majority of cases.
- *
- * Long-term fix: migrate gtfs_stop_times.arrival_time / departure_time and
- * gtfs_frequencies.start_time / end_time to `interval` so the raw GTFS value
- * is preserved. See migration 0011 (TODO) for that schema change.
+ * GTFS allows times past 24:00 for overnight trips (e.g. "25:30:00" = 01:30 AM
+ * the following service day). The gtfs_stop_times and gtfs_frequencies columns
+ * are stored as `interval`, which accepts these values natively, so no wrapping
+ * is needed.
  *
  * If the value is malformed we return it as-is and let Postgres surface a
  * clear error rather than silently swallowing bad data.
@@ -56,13 +46,6 @@ const normalizeTime = (value: string | undefined): string | null => {
 	const m = Number.parseInt(rawM, 10)
 	const s = Number.parseInt(rawS, 10)
 	if (Number.isNaN(h) || Number.isNaN(m) || Number.isNaN(s)) return trimmed
-	//
-	// if (h >= 24) {
-	// 	console.warn(
-	// 		`normalizeTime: GTFS time "${trimmed}" exceeds 23:59:59 — wrapping hours (${h} → ${h % 24}) to fit Postgres "time" column. Overnight trip data may be slightly misclassified into early-morning bins.`
-	// 	)
-	// }
-	// const wrappedH = h % 24
 	return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 }
 
@@ -377,11 +360,7 @@ const computeScheduledHeadways = async () => {
     ),
     departures as (
       select t.route_id, t.direction_id, st.stop_id, t.service_id,
-        -- Cast to interval so this query works both before migration 0012 (where
-        -- departure_time is type 'time') and after (where it becomes 'interval').
-        -- 'time'::interval and 'interval'::interval both produce an interval value,
-        -- allowing a consistent comparison against the interval-typed bin boundaries.
-        st.departure_time::interval as departure_time
+        st.departure_time
       from gtfs_trips t
       join gtfs_stop_times st on st.trip_id = t.trip_id
     ),
@@ -497,38 +476,40 @@ const runImport = async () => {
 	const workspace = join(tmpdir(), `gtfs-${Date.now()}`)
 	await mkdir(workspace, { recursive: true })
 
-	const extractedFiles: Record<string, string> = {}
+	try {
+		const extractedFiles: Record<string, string> = {}
 
-	for await (const entry of zip) {
-		if (!TABLES[entry.path]) {
-			entry.autodrain()
-			continue
+		for await (const entry of zip) {
+			if (!TABLES[entry.path]) {
+				entry.autodrain()
+				continue
+			}
+			const filePath = join(workspace, entry.path)
+			const writeStream = createWriteStream(filePath)
+			await pipeline(entry, writeStream)
+			extractedFiles[entry.path] = filePath
 		}
-		const filePath = join(workspace, entry.path)
-		const writeStream = createWriteStream(filePath)
-		await pipeline(entry, writeStream)
-		extractedFiles[entry.path] = filePath
+
+		const importOrder = [
+			'routes.txt',
+			'stops.txt',
+			'trips.txt',
+			'stop_times.txt',
+			'shapes.txt',
+			'calendar.txt',
+			'calendar_dates.txt',
+			'frequencies.txt'
+		]
+
+		for (const fileName of importOrder) {
+			const filePath = extractedFiles[fileName]
+			if (!filePath) continue
+			const config = TABLES[fileName]
+			await importFile(createReadStream(filePath), config)
+		}
+	} finally {
+		await rm(workspace, { recursive: true, force: true })
 	}
-
-	const importOrder = [
-		'routes.txt',
-		'stops.txt',
-		'trips.txt',
-		'stop_times.txt',
-		'shapes.txt',
-		'calendar.txt',
-		'calendar_dates.txt',
-		'frequencies.txt'
-	]
-
-	for (const fileName of importOrder) {
-		const filePath = extractedFiles[fileName]
-		if (!filePath) continue
-		const config = TABLES[fileName]
-		await importFile(createReadStream(filePath), config)
-	}
-
-	await rm(workspace, { recursive: true, force: true })
 
 	await refreshStopGeometry()
 	await buildCanonicalSequences()
