@@ -48,6 +48,11 @@ create table if not exists route_bunching_stats (
   avg_hw_ratio double precision,
   median_scheduled_headway double precision,
   median_actual_headway double precision,
+  gapped_headways int,
+  observed_wait_min double precision,
+  scheduled_wait_min double precision,
+  excess_wait_min double precision,
+  headway_cv double precision,
   primary key (route_id, direction_id, service_id, time_of_day_bucket)
 );
 
@@ -78,6 +83,22 @@ create table if not exists route_hourly_bunching_stats (
   window_days int not null,
   primary key (route_id, service_id, hour_of_day)
 );
+
+create table if not exists route_daily_bunching_stats (
+  route_id text not null,
+  service_id text not null,
+  stat_date date not null,
+  total_headways int not null,
+  bunched_headways int not null,
+  bunching_rate double precision,
+  excess_wait_min double precision,
+  headway_cv double precision,
+  computed_at timestamptz not null,
+  primary key (route_id, service_id, stat_date)
+);
+
+create index if not exists route_daily_bunching_stats_route_idx
+  on route_daily_bunching_stats (route_id, stat_date);
 
 create table if not exists route_direction_labels (
   route_id    text not null,
