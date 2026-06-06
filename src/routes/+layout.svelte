@@ -121,10 +121,15 @@
 			<section class="modal-section" aria-labelledby="modal-section-methodology">
 				<h3 id="modal-section-methodology">Methodology</h3>
 				<p>
-					Vehicle position data is fetched from the CTA's real-time API every 30 seconds. For each
-					stop on each route, consecutive bus arrivals are recorded and the <strong>headway</strong> —
-					the time gap between them — is computed. Those headways are then classified and aggregated by
-					time-of-day bucket (AM Peak, Midday, PM Peak, Evening, Night).
+					Vehicle position data is fetched from the CTA's real-time API roughly every 30–45 seconds.
+					For each stop on each route, consecutive bus arrivals are recorded and the
+					<strong>headway</strong> — the time gap between them — is computed. Those headways are then
+					classified and aggregated by time-of-day bucket (AM Peak, Midday, PM Peak, Evening, Night).
+				</p>
+				<p>
+					Because positions are sampled rather than continuous, each arrival time is estimated by
+					interpolating between the two position reports that bracket the stop, which keeps the timing
+					accurate to within a few seconds rather than a full polling interval.
 				</p>
 				<p>
 					Bunching thresholds are applied relative to each route's scheduled headway so a frequent
@@ -154,6 +159,23 @@
 						<dd>
 							The share of observed headways that exceed 175% of the scheduled headway — long gaps
 							where passengers are left waiting much longer than expected.
+						</dd>
+					</div>
+					<div class="glossary-row">
+						<dt>Excess wait time</dt>
+						<dd>
+							The extra time the average rider waits because buses are unevenly spaced, in minutes.
+							For a turn-up-and-go service the mean wait is E[H²] / (2·E[H]), so bunching inflates
+							waiting even when the average headway is on schedule. Shown only for frequent routes,
+							where riders arrive without consulting a timetable.
+						</dd>
+					</div>
+					<div class="glossary-row">
+						<dt>Headway CV</dt>
+						<dd>
+							The coefficient of variation of headways (standard deviation ÷ mean) — the
+							transit-industry standard measure of service regularity. 0 means perfectly even
+							spacing; higher values mean more irregular, bunch-prone service.
 						</dd>
 					</div>
 					<div class="glossary-row">
