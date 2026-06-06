@@ -136,7 +136,7 @@ export const runPublishServing = async () => {
 
 		try {
 			// Fetch all source data from the warehouse in parallel.
-			const [routes, stops, calendar, segments, routeStats, segmentStats, hourlyStats, maxArrival] =
+			const [routes, stops, calendar, segments, routeStats, segmentStats, hourlyStats, directionLabels, maxArrival] =
 				await Promise.all([
 					warehouseClient.query<{ route_id: string; route_short_name: string; route_long_name: string }>(
 						`SELECT route_id, route_short_name, route_long_name
@@ -196,6 +196,9 @@ export const runPublishServing = async () => {
                     window_days
              FROM route_hourly_bunching_stats`
 					),
+					warehouseClient.query<{ route_id: string; direction_id: number; dir: string }>(
+						`SELECT route_id, direction_id, dir FROM route_direction_labels`
+					),
 					warehouseClient.query<{ max_observed_arrival_time: string | null }>(
 						`SELECT max(arrival_time) AS max_observed_arrival_time FROM headways_enriched`
 					)
@@ -251,6 +254,17 @@ export const runPublishServing = async () => {
 				await deleteObsoleteRows(
 					servingClient, 'segments', 'id', 'uuid',
 					segments.rows.map((r) => r.id)
+				)
+
+				await upsertBatched(servingClient, {
+					table: 'route_direction_labels',
+					columns: ['route_id', 'direction_id', 'dir'],
+					conflictColumns: ['route_id', 'direction_id'],
+					rows: directionLabels.rows
+				})
+				await deleteObsoleteRows(
+					servingClient, 'route_direction_labels', 'route_id', 'text',
+					[...new Set(directionLabels.rows.map((r) => r.route_id))]
 				)
 
 				// ── Stats tables: replace in-place ────────────────────────────────

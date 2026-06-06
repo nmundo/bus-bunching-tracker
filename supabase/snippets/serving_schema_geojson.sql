@@ -79,6 +79,13 @@ create table if not exists route_hourly_bunching_stats (
   primary key (route_id, service_id, hour_of_day)
 );
 
+create table if not exists route_direction_labels (
+  route_id    text not null,
+  direction_id int not null,
+  dir         text not null,
+  primary key (route_id, direction_id)
+);
+
 create table if not exists publish_meta (
   id int primary key check (id = 1),
   last_published_at timestamptz not null,

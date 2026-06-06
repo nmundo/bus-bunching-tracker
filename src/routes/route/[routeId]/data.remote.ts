@@ -226,7 +226,7 @@ export const getRouteSegments = query('unchecked', async ({ routeId, serviceId, 
 export const getRouteDirections = query('unchecked', async ({ routeId }: { routeId: string }): Promise<Record<string, string>> => {
 	try {
 		const result = await dbQuery<{ direction_id: number; dir: string }>(
-			`SELECT direction_id, dir FROM get_route_directions($1)`,
+			`SELECT direction_id, dir FROM route_direction_labels WHERE route_id = $1`,
 			[routeId]
 		)
 		const directions: Record<string, string> = {}

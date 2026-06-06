@@ -345,3 +345,11 @@ create table if not exists job_state (
   id text primary key,
   watermark timestamptz
 );
+
+-- Direction label lookup: pre-computed from get_route_directions(), published to serving DB
+create table if not exists route_direction_labels (
+  route_id     text not null,
+  direction_id int not null,
+  dir          text not null,
+  primary key (route_id, direction_id)
+);
