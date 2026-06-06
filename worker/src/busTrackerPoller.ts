@@ -1,5 +1,5 @@
 import { fileURLToPath } from 'node:url'
-import { busTimeRequest } from './busTrackerClient'
+import { busTimeRequest, CtaBusTrackerError } from './busTrackerClient'
 import { query, closePool } from './db'
 import { optionalEnv } from './env'
 
@@ -314,22 +314,24 @@ export const buildPollPlan = ({
 	}
 }
 
+// The CTA API returns an `error` element with this message when no buses are
+// currently running on the requested routes (e.g. overnight / off-peak gap).
+// This is a valid empty result, not a real failure — do not count it against
+// the consecutive-failure budget or it will crash the poller every night.
+export const isNoVehicleError = (err: CtaBusTrackerError) =>
+	err.message.toLowerCase().includes('no vehicle')
+
 const runVehicleBatch = async (routes: string[]): Promise<BatchResult> => {
 	try {
 		const response = await busTimeRequest<VehiclesResponse>('getvehicles', { rt: routes.join(',') })
 		const vehicles = response.vehicle ?? response.vehicles ?? []
-		return {
-			routes,
-			vehicles,
-			vehiclesCount: vehicles.length
-		}
+		return { routes, vehicles, vehiclesCount: vehicles.length }
 	} catch (error) {
-		return {
-			routes,
-			vehicles: [],
-			vehiclesCount: 0,
-			error: toError(error)
+		if (error instanceof CtaBusTrackerError && isNoVehicleError(error)) {
+			// No buses on these routes right now — treat as empty, not a failure.
+			return { routes, vehicles: [], vehiclesCount: 0 }
 		}
+		return { routes, vehicles: [], vehiclesCount: 0, error: toError(error) }
 	}
 }
 
@@ -384,7 +386,11 @@ export const pollOnce = async (state: PollerState, config: PollerConfig) => {
 	for (const batch of batches) {
 		const result = await runVehicleBatch(batch)
 		if (result.error) {
-			console.error(`getvehicles batch failed for routes ${batch.join(',')}`, result.error)
+			const status =
+				result.error instanceof CtaBusTrackerError ? ` (HTTP ${result.error.status})` : ''
+			console.error(
+				`getvehicles batch failed for routes ${batch.join(',')}${status}: ${result.error.message}`
+			)
 		}
 		batchResults.push(result)
 	}

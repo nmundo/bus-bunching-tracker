@@ -4,9 +4,11 @@ import {
 	buildPollPlan,
 	clampBatchSize,
 	getLowTierCycleMultiplier,
+	isNoVehicleError,
 	stableRouteBucket,
 	type RouteActivityState
 } from '../worker/src/busTrackerPoller'
+import { CtaBusTrackerError } from '../worker/src/busTrackerClient'
 
 const makeRouteActivity = (pairs: Array<[string, number]>) => {
 	const activity = new Map<string, RouteActivityState>()
@@ -84,5 +86,27 @@ describe('busTrackerPoller helpers', () => {
 	it('keeps bucket hashing stable for the same route id', () => {
 		expect(stableRouteBucket('22', 3)).toBe(stableRouteBucket('22', 3))
 		expect(stableRouteBucket('49', 3)).toBe(stableRouteBucket('49', 3))
+	})
+
+	it('treats "No vehicle found" as a non-failure (overnight / off-peak gap)', () => {
+		const noVehicle = new CtaBusTrackerError({
+			message: 'CTA Bus Tracker API error: No vehicle found.',
+			endpoint: 'getvehicles',
+			status: 200
+		})
+		const realError = new CtaBusTrackerError({
+			message: 'CTA Bus Tracker HTTP error 403',
+			endpoint: 'getvehicles',
+			status: 403
+		})
+		const networkError = new CtaBusTrackerError({
+			message: 'fetch failed',
+			endpoint: 'getvehicles',
+			status: null
+		})
+
+		expect(isNoVehicleError(noVehicle)).toBe(true)
+		expect(isNoVehicleError(realError)).toBe(false)
+		expect(isNoVehicleError(networkError)).toBe(false)
 	})
 })
