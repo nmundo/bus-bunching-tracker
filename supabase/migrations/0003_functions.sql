@@ -545,6 +545,22 @@ begin
 end;
 $$;
 
+-- Lookup: rebuild route_direction_labels from get_route_directions() for all routes.
+-- Called after every GTFS import (once route_stop_sequences is populated).
+create or replace function refresh_route_direction_labels()
+returns void
+language plpgsql
+as $$
+begin
+  delete from route_direction_labels;
+
+  insert into route_direction_labels (route_id, direction_id, dir)
+  select r.route_id, d.direction_id, d.dir
+  from gtfs_routes r
+  cross join lateral get_route_directions(r.route_id) d;
+end;
+$$;
+
 -- Lookup: return the CTA direction label (e.g. "Northbound") for each GTFS direction_id of a route.
 -- Joins through the first terminal stop of each direction → stop_map → bt_pattern_stops → bt_patterns,
 -- which is the only reliable path because shared stops in stop_map can carry the wrong dir label.

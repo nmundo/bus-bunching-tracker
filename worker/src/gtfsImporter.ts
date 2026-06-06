@@ -513,6 +513,7 @@ const runImport = async () => {
 
 	await refreshStopGeometry()
 	await buildCanonicalSequences()
+	await query('SELECT refresh_route_direction_labels()')
 	await computeScheduledHeadways()
 	await synthesizeFrequenciesIfEmpty()
 }
