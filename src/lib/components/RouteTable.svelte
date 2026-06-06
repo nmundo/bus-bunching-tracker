@@ -23,10 +23,29 @@
 		onSort?: (col: RouteSortCol) => void
 	} = $props()
 
+	// Excess Wait Time only models rider experience on turn-up-and-go (frequent)
+	// service; for infrequent routes riders time arrivals to the schedule, so we
+	// suppress EWT rather than show a misleading number.
+	const EWT_FREQUENT_HEADWAY_MAX = 12
+
+	// Rates computed from very few observations are noisy; mark them so a 100%
+	// rate from 3 headways doesn't read the same as one from 300.
+	const LOW_CONFIDENCE_HEADWAYS = 30
+	const isLowConfidence = (route: RouteStat) =>
+		(route.total_headways ?? 0) > 0 && (route.total_headways ?? 0) < LOW_CONFIDENCE_HEADWAYS
+
 	const formatPercent = (value: number | null) =>
 		value === null ? '—' : `${(value * 100).toFixed(1)}%`
-	const formatNumber = (value: number | null) => (value === null ? '—' : value.toFixed(2))
 	const formatHeadways = (value: number | null) => (value === null ? '—' : value.toLocaleString())
+	const formatCv = (value: number | null | undefined) =>
+		value === null || value === undefined ? '—' : value.toFixed(2)
+	const formatExcessWait = (route: RouteStat) => {
+		const ewt = route.excess_wait_min
+		const sched = route.median_scheduled_headway
+		if (ewt === null || ewt === undefined) return '—'
+		if (sched === null || sched === undefined || sched > EWT_FREQUENT_HEADWAY_MAX) return '—'
+		return `${ewt >= 0 ? '+' : ''}${ewt.toFixed(1)}`
+	}
 	const getRiskLevel = (value: number | null): RiskLevel => classifyRisk(value)
 	const getRouteHref = (routeId: string) => buildRouteDetailHref(routeId, { serviceId, bucket })
 
@@ -81,21 +100,32 @@
 				>
 				<th
 					class="sortable-th"
-					onclick={() => onSort?.('avg_hw_ratio')}
-					aria-sort={sortCol === 'avg_hw_ratio'
+					onclick={() => onSort?.('excess_wait_min')}
+					aria-sort={sortCol === 'excess_wait_min'
 						? sortDir === 'asc'
 							? 'ascending'
 							: 'descending'
 						: 'none'}
-					title="Average ratio of actual headway to scheduled headway. 1.0 = on schedule; below 1.0 = buses running closer together than planned."
-					>HW ratio<span class="sort-icon">{sortIcon('avg_hw_ratio')}</span></th
+					title="Excess wait time (min): extra minutes the average rider waits versus the schedule, from headway irregularity. Shown only for frequent (turn-up-and-go) routes."
+					>Excess wait<span class="sort-icon">{sortIcon('excess_wait_min')}</span></th
+				>
+				<th
+					class="sortable-th"
+					onclick={() => onSort?.('headway_cv')}
+					aria-sort={sortCol === 'headway_cv'
+						? sortDir === 'asc'
+							? 'ascending'
+							: 'descending'
+						: 'none'}
+					title="Coefficient of variation of headways (std dev ÷ mean). 0 = perfectly even spacing; higher = more irregular. The transit-industry standard regularity measure."
+					>Headway CV<span class="sort-icon">{sortIcon('headway_cv')}</span></th
 				>
 			</tr>
 		</thead>
 		<tbody>
 			{#if routes.length === 0}
 				<tr>
-					<td colspan="6" class="table-empty">
+					<td colspan="7" class="table-empty">
 						No route stats available for the selected filters.
 					</td>
 				</tr>
@@ -103,6 +133,10 @@
 				{#each routes as route (route.route_id)}
 					<tr
 						class="route-row"
+						class:low-confidence={isLowConfidence(route)}
+						title={isLowConfidence(route)
+							? `Based on only ${route.total_headways} observed headways — interpret with caution.`
+							: undefined}
 						animate:flip={{ duration: 260 }}
 						in:fade={{ duration: 180 }}
 						role="link"
@@ -135,8 +169,12 @@
 								—
 							{/if}
 						</td>
-						<td>{formatHeadways(route.total_headways)}</td>
-						<td>{formatNumber(route.avg_hw_ratio)}</td>
+						<td>
+							{formatHeadways(route.total_headways)}
+							{#if isLowConfidence(route)}<span class="low-data-flag" aria-hidden="true">⚠</span>{/if}
+						</td>
+						<td>{formatExcessWait(route)}</td>
+						<td>{formatCv(route.headway_cv)}</td>
 					</tr>
 				{/each}
 			{/if}
@@ -167,6 +205,15 @@
 	}
 	.th-badge {
 		white-space: nowrap;
+	}
+	.route-row.low-confidence {
+		opacity: 0.62;
+	}
+	.low-data-flag {
+		margin-left: 4px;
+		font-size: 11px;
+		color: var(--risk-medium, #b54708);
+		cursor: help;
 	}
 	.bucket-badge {
 		display: inline-flex;

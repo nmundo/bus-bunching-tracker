@@ -47,7 +47,18 @@ export const getRoutes = query('unchecked', async ({ serviceId, bucket }: Routes
           THEN SUM(COALESCE(rbs.gapped_headways, 0))::float / SUM(rbs.total_headways)
           ELSE NULL
         END AS gapping_rate,
-        AVG(rbs.avg_hw_ratio) AS avg_hw_ratio
+        AVG(rbs.avg_hw_ratio) AS avg_hw_ratio,
+        -- EWT/CV/median are per-bucket; recombine as a headway-weighted mean,
+        -- matching how the route-detail summary already weights medians.
+        SUM(rbs.excess_wait_min * rbs.total_headways) FILTER (WHERE rbs.excess_wait_min IS NOT NULL)
+          / NULLIF(SUM(rbs.total_headways) FILTER (WHERE rbs.excess_wait_min IS NOT NULL), 0)
+          AS excess_wait_min,
+        SUM(rbs.headway_cv * rbs.total_headways) FILTER (WHERE rbs.headway_cv IS NOT NULL)
+          / NULLIF(SUM(rbs.total_headways) FILTER (WHERE rbs.headway_cv IS NOT NULL), 0)
+          AS headway_cv,
+        SUM(rbs.median_scheduled_headway * rbs.total_headways) FILTER (WHERE rbs.median_scheduled_headway IS NOT NULL)
+          / NULLIF(SUM(rbs.total_headways) FILTER (WHERE rbs.median_scheduled_headway IS NOT NULL), 0)
+          AS median_scheduled_headway
       FROM route_bunching_stats rbs
       ${aggWhere}
       GROUP BY rbs.route_id
@@ -70,6 +81,9 @@ export const getRoutes = query('unchecked', async ({ serviceId, bucket }: Routes
       agg.super_bunching_rate,
       agg.gapping_rate,
       agg.avg_hw_ratio,
+      agg.excess_wait_min,
+      agg.headway_cv,
+      agg.median_scheduled_headway,
       wb.worst_bucket
     FROM gtfs_routes r
     LEFT JOIN agg ON agg.route_id = r.route_id

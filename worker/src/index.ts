@@ -4,6 +4,7 @@ import { runPoller } from './busTrackerPoller'
 import { runArrivals } from './arrivalsProcessor'
 import { runHeadways } from './headwayProcessor'
 import { runEnrich } from './enrichJob'
+import { runDailySnapshot } from './dailySnapshotJob'
 import { runPublishServing } from './publishServing'
 
 const scheduleJobs = () => {
@@ -13,6 +14,7 @@ const scheduleJobs = () => {
 	let arrivalsRunning = false
 	let headwaysRunning = false
 	let enrichRunning = false
+	let dailySnapshotRunning = false
 	let publishRunning = false
 
 	cron.schedule('30 2 * * *', () => {
@@ -66,6 +68,24 @@ const scheduleJobs = () => {
 				enrichRunning = false
 			})
 	})
+
+	// Snapshot the previous local day just before the publish below picks it up.
+	cron.schedule(
+		'15 3 * * *',
+		() => {
+			if (dailySnapshotRunning) {
+				console.warn('runDailySnapshot already in progress, skipping this tick')
+				return
+			}
+			dailySnapshotRunning = true
+			runDailySnapshot()
+				.catch((error) => console.error('Daily snapshot failed', error))
+				.finally(() => {
+					dailySnapshotRunning = false
+				})
+		},
+		{ timezone: 'America/Chicago' }
+	)
 
 	cron.schedule(
 		'30 3 * * *',

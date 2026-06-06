@@ -4,6 +4,8 @@
 	import BunchingChart from '$components/BunchingChart.svelte'
 	import RouteMap from '$components/RouteMap.svelte'
 	import RouteStatsSummary from '$components/RouteStatsSummary.svelte'
+	import TrendSparkline from '$components/TrendSparkline.svelte'
+	import type { TrendPoint } from '$lib/ui/trend'
 	import { withRouteDetailFilterParams } from '$lib/ui/routeDetailUrl'
 	import { classifyRisk, type RiskLevel } from '$lib/ui/networkMetrics'
 	import { getRouteStats, getRouteSegments } from './data.remote'
@@ -35,6 +37,10 @@
 	const dirLabel = (id: string) => directions[id] ?? `Direction ${id}`
 
 	const chartTitle = $derived(`Route ${stats?.route?.route_short_name ?? ''} · bunching by hour`)
+
+	const bunchingTrend = $derived<TrendPoint[]>(
+		(stats?.dailyTrend ?? []).map((d) => ({ date: d.stat_date, value: d.bunching_rate }))
+	)
 
 	const timeBuckets = ['AM_peak', 'Midday', 'PM_peak', 'Evening', 'Night']
 	const formatPercent = (value: number | null | undefined) =>
@@ -130,6 +136,23 @@
 				<RouteStatsSummary summary={{ ...stats.summary, route: stats.route }} />
 			</div>
 		{/if}
+
+		<div class="panel section-gap trend-panel">
+			<div class="section-head">
+				<div>
+					<p class="meta-line">Daily trend</p>
+					<h3>Bunching rate over time</h3>
+				</div>
+			</div>
+			<TrendSparkline
+				points={bunchingTrend}
+				label="Bunching rate"
+				lowerIsBetter={true}
+				width={220}
+				height={44}
+				format={(v) => `${(v * 100).toFixed(1)}%`}
+			/>
+		</div>
 
 		<div class="grid two section-gap">
 			<div class="panel">

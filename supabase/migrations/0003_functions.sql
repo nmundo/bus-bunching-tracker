@@ -363,7 +363,11 @@ begin
     bunching_rate,
     avg_hw_ratio,
     median_scheduled_headway,
-    median_actual_headway
+    median_actual_headway,
+    observed_wait_min,
+    scheduled_wait_min,
+    excess_wait_min,
+    headway_cv
   )
   select
     route_id,
@@ -377,7 +381,21 @@ begin
     avg((bunched)::int)::float as bunching_rate,
     avg(hw_ratio) as avg_hw_ratio,
     percentile_cont(0.5) within group (order by scheduled_headway_min) as median_scheduled_headway,
-    percentile_cont(0.5) within group (order by actual_headway_min) as median_actual_headway
+    percentile_cont(0.5) within group (order by actual_headway_min) as median_actual_headway,
+    -- Mean passenger wait for random arrivals = E[H^2] / (2*E[H]).  Computed over
+    -- schedule-matched rows only, since "excess" needs a scheduled baseline.
+    sum(actual_headway_min * actual_headway_min) filter (where scheduled_headway_min is not null)
+      / nullif(2 * sum(actual_headway_min) filter (where scheduled_headway_min is not null), 0)
+      as observed_wait_min,
+    sum(scheduled_headway_min * scheduled_headway_min) filter (where scheduled_headway_min is not null)
+      / nullif(2 * sum(scheduled_headway_min) filter (where scheduled_headway_min is not null), 0)
+      as scheduled_wait_min,
+    (sum(actual_headway_min * actual_headway_min) filter (where scheduled_headway_min is not null)
+       / nullif(2 * sum(actual_headway_min) filter (where scheduled_headway_min is not null), 0))
+    - (sum(scheduled_headway_min * scheduled_headway_min) filter (where scheduled_headway_min is not null)
+       / nullif(2 * sum(scheduled_headway_min) filter (where scheduled_headway_min is not null), 0))
+      as excess_wait_min,
+    stddev_samp(actual_headway_min) / nullif(avg(actual_headway_min), 0) as headway_cv
   from recent_headways_enriched
   group by route_id, direction_id, service_id, time_of_day_bucket;
 
@@ -426,6 +444,48 @@ begin
     p_days as window_days
   from recent_headways_enriched
   group by route_id, service_id, hour_of_day;
+end;
+$$;
+
+-- Stats: snapshot one local (Chicago) calendar day of enriched headways into the
+-- daily trend table.  Defaults to "yesterday" so it runs against a complete day.
+-- Unlike refresh_bunching_stats this only replaces the target day, preserving
+-- history that has aged out of the rolling enrichment window.
+create or replace function snapshot_daily_bunching_stats(p_date date default null)
+returns integer
+language plpgsql
+as $$
+declare
+  v_date date := coalesce(p_date, ((now() at time zone 'America/Chicago')::date - 1));
+  v_rows integer;
+begin
+  delete from route_daily_bunching_stats where stat_date = v_date;
+
+  insert into route_daily_bunching_stats (
+    route_id, service_id, stat_date,
+    total_headways, bunched_headways, bunching_rate,
+    excess_wait_min, headway_cv, computed_at
+  )
+  select
+    he.route_id,
+    coalesce(he.service_id, 'unknown') as service_id,
+    v_date as stat_date,
+    count(*) as total_headways,
+    count(*) filter (where he.bunched) as bunched_headways,
+    avg((he.bunched)::int)::float as bunching_rate,
+    (sum(he.actual_headway_min * he.actual_headway_min) filter (where he.scheduled_headway_min is not null)
+       / nullif(2 * sum(he.actual_headway_min) filter (where he.scheduled_headway_min is not null), 0))
+    - (sum(he.scheduled_headway_min * he.scheduled_headway_min) filter (where he.scheduled_headway_min is not null)
+       / nullif(2 * sum(he.scheduled_headway_min) filter (where he.scheduled_headway_min is not null), 0))
+      as excess_wait_min,
+    stddev_samp(he.actual_headway_min) / nullif(avg(he.actual_headway_min), 0) as headway_cv,
+    now()
+  from headways_enriched he
+  where (he.arrival_time at time zone 'America/Chicago')::date = v_date
+  group by he.route_id, coalesce(he.service_id, 'unknown');
+
+  get diagnostics v_rows = row_count;
+  return v_rows;
 end;
 $$;
 

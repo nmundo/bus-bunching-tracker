@@ -75,7 +75,7 @@ export const countRoutesWithData = (routes: RouteStat[]): number =>
 
 export const computeWeightedRate = (
 	routes: RouteStat[],
-	field: 'super_bunching_rate' | 'gapping_rate'
+	field: 'super_bunching_rate' | 'gapping_rate' | 'excess_wait_min' | 'headway_cv'
 ): number | null => {
 	let weightedTotal = 0
 	let totalHeadways = 0
