@@ -584,9 +584,9 @@ input:focus-visible {
 	gap: 12px;
 }
 
-.page-transition {
-	will-change: transform, opacity;
-}
+/* .page-transition: no will-change here. Safari has a rendering bug where
+   promoting this wrapper to a compositor layer leaves it blank after the
+   fly transition completes. The animation is smooth without the hint. */
 
 .chart-shell {
 	width: 100%;
