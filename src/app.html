@@ -10,6 +10,17 @@
 			href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap"
 			rel="stylesheet"
 		/>
+		<script>
+			(function () {
+				try {
+					var stored = localStorage.getItem('theme')
+					var theme =
+						stored ??
+						(window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+					document.documentElement.setAttribute('data-theme', theme)
+				} catch (_) {}
+			})()
+		</script>
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">
