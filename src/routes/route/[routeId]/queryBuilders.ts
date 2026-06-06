@@ -132,7 +132,6 @@ export const _buildSegmentsQuery = ({ routeId, serviceId, bucket, directionId }:
 	const segmentFilters = ['s.route_id = $1']
 	if (directionId !== null && directionId !== undefined) {
 		paramsList.push(directionId)
-		statsFilters.push(`sbs.direction_id = $${paramsList.length}`)
 		segmentFilters.push(`s.direction_id = $${paramsList.length}`)
 	}
 
