@@ -45,6 +45,8 @@
 
 	const formatPercent = (value: number | null) =>
 		value === null ? '—' : `${(value * 100).toFixed(1)}%`
+	const formatMinutes = (value: number | null) =>
+		value === null ? '—' : `${value >= 0 ? '+' : ''}${value.toFixed(1)} min`
 	const formatBucketLabel = (value: string) => value.replace('_', ' ')
 
 	$effect(() => {
@@ -99,6 +101,7 @@
 		const withDataCount = countRoutesWithData(routes)
 		const networkSuperBunched = computeWeightedRate(routes, 'super_bunching_rate')
 		const networkGapping = computeWeightedRate(routes, 'gapping_rate')
+		const networkExcessWait = computeWeightedRate(routes, 'excess_wait_min')
 
 		return {
 			worstRouteLabel: worstRoute?.route_short_name || worstRoute?.route_id || '—',
@@ -107,6 +110,7 @@
 			networkAverage: formatPercent(networkAverage),
 			networkSuperBunched: formatPercent(networkSuperBunched),
 			networkGapping: formatPercent(networkGapping),
+			networkExcessWait: formatMinutes(networkExcessWait),
 			highRiskCount,
 			withDataCount,
 			totalRoutes: routes.length
@@ -208,6 +212,11 @@
 
 	<div class:stale={loading}>
 		<div class="kpi-grid">
+			<article class="stat-card">
+				<p class="meta-line">Network excess wait</p>
+				<h3>{dashboardMetrics.networkExcessWait}</h3>
+				<p>Extra minutes riders wait vs. schedule</p>
+			</article>
 			<article class="stat-card">
 				<p class="meta-line">Network avg bunching</p>
 				<h3>{dashboardMetrics.networkAverage}</h3>

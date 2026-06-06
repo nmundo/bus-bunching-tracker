@@ -72,10 +72,21 @@ export const applyRouteTableFilters = (
 	})
 }
 
-export type RouteSortCol = 'route' | 'bunching_rate' | 'total_headways' | 'avg_hw_ratio'
+export type RouteSortCol =
+	| 'route'
+	| 'bunching_rate'
+	| 'total_headways'
+	| 'excess_wait_min'
+	| 'headway_cv'
 export type RouteSortDir = 'asc' | 'desc'
 
-const VALID_SORT_COLS: RouteSortCol[] = ['route', 'bunching_rate', 'total_headways', 'avg_hw_ratio']
+const VALID_SORT_COLS: RouteSortCol[] = [
+	'route',
+	'bunching_rate',
+	'total_headways',
+	'excess_wait_min',
+	'headway_cv'
+]
 const VALID_SORT_DIRS: RouteSortDir[] = ['asc', 'desc']
 
 export const parseSortParams = (
@@ -103,8 +114,8 @@ export const sortRoutes = (
 			bv = b.route_short_name || b.route_id
 			return sign * av.localeCompare(bv, undefined, { numeric: true })
 		}
-		av = a[col]
-		bv = b[col]
+		av = a[col] ?? null
+		bv = b[col] ?? null
 		if (av === null && bv === null) return 0
 		if (av === null) return 1
 		if (bv === null) return -1

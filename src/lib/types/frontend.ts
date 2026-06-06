@@ -8,6 +8,9 @@ export type RouteStat = {
 	worst_bucket?: string | null
 	super_bunching_rate?: number | null
 	gapping_rate?: number | null
+	excess_wait_min?: number | null
+	headway_cv?: number | null
+	median_scheduled_headway?: number | null
 }
 
 export type BucketStat = {
