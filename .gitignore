@@ -38,4 +38,6 @@ temp/
 instructions.md
 
 #supabase
+supabase/.tmp
 supabase/.temp/
+
