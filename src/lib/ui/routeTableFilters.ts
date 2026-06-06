@@ -72,9 +72,50 @@ export const applyRouteTableFilters = (
 	})
 }
 
+export type RouteSortCol = 'route' | 'bunching_rate' | 'total_headways' | 'avg_hw_ratio'
+export type RouteSortDir = 'asc' | 'desc'
+
+const VALID_SORT_COLS: RouteSortCol[] = ['route', 'bunching_rate', 'total_headways', 'avg_hw_ratio']
+const VALID_SORT_DIRS: RouteSortDir[] = ['asc', 'desc']
+
+export const parseSortParams = (
+	searchParams: URLSearchParams
+): { sortCol: RouteSortCol; sortDir: RouteSortDir } => {
+	const col = searchParams.get('sort') as RouteSortCol | null
+	const dir = searchParams.get('sort_dir') as RouteSortDir | null
+	return {
+		sortCol: col && VALID_SORT_COLS.includes(col) ? col : 'bunching_rate',
+		sortDir: dir && VALID_SORT_DIRS.includes(dir) ? dir : 'desc'
+	}
+}
+
+export const sortRoutes = (
+	routes: RouteStat[],
+	col: RouteSortCol,
+	dir: RouteSortDir
+): RouteStat[] => {
+	const sign = dir === 'asc' ? 1 : -1
+	return [...routes].sort((a, b) => {
+		let av: string | number | null
+		let bv: string | number | null
+		if (col === 'route') {
+			av = a.route_short_name || a.route_id
+			bv = b.route_short_name || b.route_id
+			return sign * av.localeCompare(bv, undefined, { numeric: true })
+		}
+		av = a[col]
+		bv = b[col]
+		if (av === null && bv === null) return 0
+		if (av === null) return 1
+		if (bv === null) return -1
+		return sign * ((av as number) - (bv as number))
+	})
+}
+
 export const withRouteTableFilterParams = (
 	searchParams: URLSearchParams,
-	filters: RouteTableFilters
+	filters: RouteTableFilters,
+	sort?: { sortCol: RouteSortCol; sortDir: RouteSortDir }
 ): URLSearchParams => {
 	const next = new URLSearchParams(searchParams)
 
@@ -94,6 +135,16 @@ export const withRouteTableFilterParams = (
 		next.set('min_data', String(filters.minData))
 	} else {
 		next.delete('min_data')
+	}
+
+	if (sort) {
+		if (sort.sortCol !== 'bunching_rate' || sort.sortDir !== 'desc') {
+			next.set('sort', sort.sortCol)
+			next.set('sort_dir', sort.sortDir)
+		} else {
+			next.delete('sort')
+			next.delete('sort_dir')
+		}
 	}
 
 	return next

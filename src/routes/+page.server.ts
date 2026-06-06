@@ -1,16 +1,18 @@
 import type { PageServerLoad } from './$types'
-import { parseRouteTableFilters } from '$lib/ui/routeTableFilters'
+import { parseRouteTableFilters, parseSortParams } from '$lib/ui/routeTableFilters'
+import { getRoutes, getNetworkHourly, getWatermark } from './data.remote'
 
-export const load: PageServerLoad = async ({ fetch, url }) => {
+export const load: PageServerLoad = async ({ url }) => {
 	const serviceId = url.searchParams.get('service_id') ?? ''
 	const bucket = url.searchParams.get('time_of_day_bucket') ?? 'AM_peak'
 	const tableFilters = parseRouteTableFilters(url.searchParams)
-	const params = new URLSearchParams()
-	if (serviceId) params.set('service_id', serviceId)
-	if (bucket) params.set('time_of_day_bucket', bucket)
+	const { sortCol, sortDir } = parseSortParams(url.searchParams)
 
-	const res = await fetch(`/api/routes?${params.toString()}`)
-	const routes = res.ok ? await res.json() : []
+	const [routes, networkHourly, watermark] = await Promise.all([
+		getRoutes({ serviceId, bucket }),
+		getNetworkHourly({ serviceId }),
+		getWatermark()
+	])
 
-	return { routes, serviceId, bucket, ...tableFilters }
+	return { routes, networkHourly, watermark, serviceId, bucket, ...tableFilters, sortCol, sortDir }
 }

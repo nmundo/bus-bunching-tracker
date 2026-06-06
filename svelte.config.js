@@ -9,9 +9,17 @@ const config = {
 		alias: {
 			$components: 'src/lib/components',
 			$server: 'src/lib/server'
+		},
+		experimental: {
+			remoteFunctions: true
 		}
 	},
-	preprocess: vitePreprocess({ script: true })
+	preprocess: vitePreprocess({ script: true }),
+	compilerOptions: {
+		experimental: {
+			async: true
+		}
+	}
 }
 
 export default config

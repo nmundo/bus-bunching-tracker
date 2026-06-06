@@ -100,6 +100,10 @@ header.site-header {
 	color: #854d0e;
 }
 
+.section-gap {
+	margin-top: 24px;
+}
+
 .panel {
 	background: var(--surface-1);
 	border: 1px solid var(--border);
@@ -260,6 +264,12 @@ input:focus-visible {
 .loading-indicator {
 	opacity: 0.92;
 	transition: opacity 0.2s ease;
+}
+
+.stale {
+	opacity: 0.45;
+	pointer-events: none;
+	transition: opacity 0.25s ease;
 }
 
 .kpi-grid {

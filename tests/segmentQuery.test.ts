@@ -3,7 +3,7 @@ import {
 	_buildSegmentFeatureCollection,
 	_buildSegmentsQuery,
 	type SegmentRow
-} from '../src/routes/api/routes/[routeId]/segments/+server'
+} from '../src/routes/route/[routeId]/queryBuilders'
 
 describe('segments query builder', () => {
 	it('keeps full route selection on segments and applies bucket in stats CTE', () => {

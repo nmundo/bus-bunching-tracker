@@ -67,37 +67,52 @@ const upsertStops = async (rt: string, dir: string, stops: StopResponse['stops']
 }
 
 const upsertPatterns = async (patterns: Pattern[], knownStops: Set<string>, route: string) => {
+	if (!patterns.length) return
+
+	// Batch-upsert all bt_patterns rows in a single round-trip instead of one
+	// query per pattern.
+	const patternValues = patterns.flatMap((p) => {
+		const coords = p.pt.map((pt) => `${pt.lon} ${pt.lat}`).join(', ')
+		return [p.pid, route, p.rtdir, `LINESTRING(${coords})`]
+	})
+	const patternPlaceholders = patterns
+		.map((_, i) => {
+			const o = i * 4
+			return `($${o + 1}, $${o + 2}, $${o + 3}, ST_GeomFromText($${o + 4}, 4326))`
+		})
+		.join(', ')
+
+	await query(
+		`insert into bt_patterns (pid, rt, dir, geom)
+     values ${patternPlaceholders}
+     on conflict (pid) do update set
+       rt = excluded.rt,
+       dir = excluded.dir,
+       geom = excluded.geom`,
+		patternValues
+	)
+
+	// Upsert pattern stops per pattern.  The unique index on (pid, seq)
+	// makes the conflict target explicit so repeated syncs update
+	// existing rows instead of accumulating duplicates.
 	for (const pattern of patterns) {
-		const coords = pattern.pt.map((pt) => `${pt.lon} ${pt.lat}`).join(', ')
-		const wkt = `LINESTRING(${coords})`
+		const stopPoints = pattern.pt.filter((pt) => pt.stpid && knownStops.has(pt.stpid))
+		if (!stopPoints.length) continue
+
+		const values = stopPoints.map((pt) => [pattern.pid, Number(pt.seq), pt.stpid])
+		const placeholders = values
+			.map((row, index) => {
+				const offset = index * 3
+				return `($${offset + 1}, $${offset + 2}, $${offset + 3})`
+			})
+			.join(', ')
 
 		await query(
-			`insert into bt_patterns (pid, rt, dir, geom)
-       values ($1, $2, $3, ST_GeomFromText($4, 4326))
-       on conflict (pid) do update set
-         rt = excluded.rt,
-         dir = excluded.dir,
-         geom = excluded.geom`,
-			[pattern.pid, route, pattern.rtdir, wkt]
-		)
-
-		const stopPoints = pattern.pt.filter((pt) => pt.stpid && knownStops.has(pt.stpid))
-		if (stopPoints.length) {
-			const values = stopPoints.map((pt) => [pattern.pid, Number(pt.seq), pt.stpid])
-			const placeholders = values
-				.map((row, index) => {
-					const offset = index * 3
-					return `($${offset + 1}, $${offset + 2}, $${offset + 3})`
-				})
-				.join(', ')
-
-			await query(
-				`insert into bt_pattern_stops (pid, seq, stpid)
+			`insert into bt_pattern_stops (pid, seq, stpid)
          values ${placeholders}
-         on conflict do nothing`,
-				values.flat()
-			)
-		}
+         on conflict (pid, seq) do update set stpid = excluded.stpid`,
+			values.flat()
+		)
 	}
 }
 
@@ -150,11 +165,30 @@ const refreshGeomsAndMappings = async () => {
   `)
 }
 
+// Recompute distance_feet for all pattern stops after bt_stops geometries have
+// been refreshed.  This keeps the precomputed column current so the arrivals
+// processor can use it instead of running spatial functions every 5 minutes.
+const refreshPatternStopDistances = async () => {
+	await query(`
+    update bt_pattern_stops ps
+    set distance_feet =
+      ST_LineLocatePoint(bp.geom, bs.geom)
+        * ST_Length(bp.geom::geography)
+        * 3.28084
+    from bt_patterns bp
+    join bt_stops bs on bs.stpid = ps.stpid
+    where bp.pid = ps.pid
+      and bp.geom is not null
+      and bs.geom is not null
+  `)
+}
+
 export const runSync = async () => {
 	const routesPayload = await busTimeRequest<RouteResponse>('getroutes', {})
 	const routes = routesPayload.routes ?? []
 	await upsertRoutes(routes)
 
+	// Phase 1: sync stops for every route and direction.
 	for (const route of routes) {
 		const dirPayload = await busTimeRequest<DirectionResponse>('getdirections', { rt: route.rt })
 		const directions = dirPayload.directions ?? []
@@ -167,16 +201,24 @@ export const runSync = async () => {
 			const stops = stopPayload.stops ?? []
 			await upsertStops(route.rt, direction.name, stops)
 		}
+	}
 
+	// Phase 2: sync patterns now that all stops are present.  Loading knownStops
+	// once here (after all stops are upserted) replaces the previous per-route
+	// loadKnownStops call that queried the full bt_stops table for every route.
+	const knownStops = await loadKnownStops()
+	for (const route of routes) {
 		const patternPayload = await busTimeRequest<PatternResponse>('getpatterns', { rt: route.rt })
 		const patterns = patternPayload.ptr ?? []
 		if (patterns.length) {
-			const knownStops = await loadKnownStops()
 			await upsertPatterns(patterns, knownStops, route.rt)
 		}
 	}
 
 	await refreshGeomsAndMappings()
+	// Recompute distance_feet after geometries are refreshed so the arrivals
+	// processor has accurate precomputed values for the new stop/pattern data.
+	await refreshPatternStopDistances()
 	console.log('Bus Tracker reference data synced')
 }
 

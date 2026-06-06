@@ -14,7 +14,7 @@ create table if not exists gtfs_stops (
   stop_name text,
   stop_lat double precision,
   stop_lon double precision,
-  geom geometry(point, 4326)
+  geom extensions.geometry(point, 4326)
 );
 
 create index if not exists gtfs_stops_geom_idx on gtfs_stops using gist (geom);
@@ -27,10 +27,12 @@ create table if not exists gtfs_trips (
   direction_id int
 );
 
+-- arrival_time / departure_time stored as interval to support GTFS times past 24:00
+-- (e.g. 25:30:00 = 01:30 AM the following service day).
 create table if not exists gtfs_stop_times (
   trip_id text references gtfs_trips(trip_id),
-  arrival_time time,
-  departure_time time,
+  arrival_time interval,
+  departure_time interval,
   stop_id text references gtfs_stops(stop_id),
   stop_sequence int,
   primary key (trip_id, stop_sequence)
@@ -66,11 +68,14 @@ create table if not exists gtfs_calendar_dates (
   primary key (service_id, date)
 );
 
+create index if not exists gtfs_calendar_dates_date_exception_idx
+  on gtfs_calendar_dates (date, exception_type, service_id);
+
 create table if not exists gtfs_frequencies (
   id bigserial primary key,
   trip_id text references gtfs_trips(trip_id),
-  start_time time,
-  end_time time,
+  start_time interval,
+  end_time interval,
   headway_secs int
 );
 
@@ -78,16 +83,20 @@ create unique index if not exists gtfs_frequencies_unique_idx
   on gtfs_frequencies (trip_id, start_time, end_time);
 
 -- Canonical sequences and segments
+-- geometry (jsonb) mirrors geom via trigger for serving without PostGIS.
 create table if not exists segments (
   id uuid primary key default gen_random_uuid(),
   route_id text references gtfs_routes(route_id),
   direction_id int,
   from_stop_id text references gtfs_stops(stop_id),
   to_stop_id text references gtfs_stops(stop_id),
-  geom geometry(linestring, 4326)
+  geom extensions.geometry(linestring, 4326),
+  geometry jsonb
 );
 
 create index if not exists segments_geom_idx on segments using gist (geom);
+create index if not exists segments_route_to_stop_direction_idx
+  on segments (route_id, to_stop_id, direction_id, id);
 
 create table if not exists route_stop_sequences (
   id uuid primary key default gen_random_uuid(),
@@ -118,6 +127,25 @@ create table if not exists scheduled_headways (
 create unique index if not exists scheduled_headways_unique_idx
   on scheduled_headways (route_id, direction_id, stop_id, service_id, time_bin_start);
 
+create index if not exists scheduled_headways_route_stop_lookup_idx
+  on scheduled_headways (route_id, stop_id, service_id, direction_id, time_bin_start)
+  where scheduled_headway_min is not null;
+
+-- Precomputed route-level fallback for enrichment (avoids per-row lateral aggregation)
+create table if not exists scheduled_headway_route_fallback (
+  route_id text not null,
+  service_id text not null,
+  direction_id int,
+  time_bin_start time not null,
+  scheduled_headway_min double precision not null
+);
+
+create unique index if not exists scheduled_headway_route_fallback_unique_idx
+  on scheduled_headway_route_fallback (route_id, service_id, coalesce(direction_id, -1), time_bin_start);
+
+create index if not exists scheduled_headway_route_fallback_lookup_idx
+  on scheduled_headway_route_fallback (route_id, service_id, direction_id, time_bin_start);
+
 -- Bus Tracker reference data
 create table if not exists bt_routes (
   rt text primary key,
@@ -130,7 +158,7 @@ create table if not exists bt_stops (
   stpnm text,
   lat double precision,
   lon double precision,
-  geom geometry(point, 4326),
+  geom extensions.geometry(point, 4326),
   rt text references bt_routes(rt),
   dir text
 );
@@ -141,15 +169,20 @@ create table if not exists bt_patterns (
   pid text primary key,
   rt text references bt_routes(rt),
   dir text,
-  geom geometry(linestring, 4326)
+  geom extensions.geometry(linestring, 4326)
 );
 
+-- distance_feet is precomputed at sync time to avoid per-run ST_LineLocatePoint calls
 create table if not exists bt_pattern_stops (
   id uuid primary key default gen_random_uuid(),
   pid text references bt_patterns(pid),
   seq int,
-  stpid text references bt_stops(stpid)
+  stpid text references bt_stops(stpid),
+  distance_feet double precision
 );
+
+create unique index if not exists bt_pattern_stops_pid_seq_idx
+  on bt_pattern_stops (pid, seq);
 
 create table if not exists route_map (
   rt text primary key references bt_routes(rt),
@@ -170,7 +203,7 @@ create table if not exists bus_positions (
   pid text references bt_patterns(pid),
   lat double precision,
   lon double precision,
-  geom geometry(point, 4326),
+  geom extensions.geometry(point, 4326),
   pdist_feet double precision,
   tmstmp timestamptz,
   tatripid text,
@@ -179,6 +212,9 @@ create table if not exists bus_positions (
 
 create index if not exists bus_positions_rt_tmstmp_idx on bus_positions (rt, tmstmp);
 create index if not exists bus_positions_geom_idx on bus_positions using gist (geom);
+create index if not exists bus_positions_tmstmp_id_idx
+  on bus_positions (tmstmp, id)
+  where tmstmp is not null;
 
 -- Derived arrivals and headways
 create table if not exists stop_arrivals (
@@ -195,6 +231,12 @@ create table if not exists stop_arrivals (
 
 create index if not exists stop_arrivals_idx
   on stop_arrivals (route_id, direction_id, stop_id, arrival_time);
+
+create index if not exists stop_arrivals_arrival_time_idx
+  on stop_arrivals (arrival_time, route_id, direction_id, stop_id, vid);
+
+create unique index if not exists stop_arrivals_dedup_idx
+  on stop_arrivals (route_id, stop_id, vid, arrival_time);
 
 create table if not exists headways (
   id bigserial primary key,
@@ -214,8 +256,12 @@ create index if not exists headways_idx
 create unique index if not exists headways_unique_idx
   on headways (route_id, direction_id, stop_id, arrival_time, curr_vid);
 
+create index if not exists headways_arrival_id_idx
+  on headways (arrival_time, id);
+
 create table if not exists headways_enriched (
   id bigserial primary key,
+  headway_id bigint not null references headways(id),
   route_id text,
   direction_id int,
   stop_id text,
@@ -232,8 +278,12 @@ create table if not exists headways_enriched (
   gapped boolean
 );
 
+create unique index if not exists headways_enriched_headway_id_uidx
+  on headways_enriched (headway_id);
+
 create index if not exists headways_enriched_route_time_idx on headways_enriched (route_id, arrival_time);
 create index if not exists headways_enriched_segment_time_idx on headways_enriched (segment_id, arrival_time);
+create index if not exists headways_enriched_arrival_time_idx on headways_enriched (arrival_time);
 
 -- Aggregated stats tables
 create table if not exists route_bunching_stats (
@@ -245,10 +295,15 @@ create table if not exists route_bunching_stats (
   total_headways int,
   bunched_headways int,
   super_bunched_headways int,
+  gapped_headways int,
   bunching_rate double precision,
   avg_hw_ratio double precision,
+  median_scheduled_headway double precision,
   median_actual_headway double precision
 );
+
+create index if not exists route_bunching_stats_filter_idx
+  on route_bunching_stats (service_id, time_of_day_bucket, route_id);
 
 create table if not exists segment_bunching_stats (
   id uuid primary key default gen_random_uuid(),
@@ -265,8 +320,36 @@ create table if not exists segment_bunching_stats (
 create index if not exists segment_bunching_stats_route_bucket_idx
   on segment_bunching_stats (route_id, time_of_day_bucket);
 
+create index if not exists segment_bunching_stats_filter_idx
+  on segment_bunching_stats (route_id, service_id, time_of_day_bucket, segment_id);
+
+create table if not exists route_hourly_bunching_stats (
+  route_id text not null,
+  service_id text not null,
+  hour_of_day int not null check (hour_of_day >= 0 and hour_of_day <= 23),
+  total_headways int not null,
+  bunched_headways int not null,
+  computed_at timestamptz not null default now(),
+  window_days int not null,
+  primary key (route_id, service_id, hour_of_day)
+);
+
+create index if not exists route_hourly_bunching_stats_route_idx
+  on route_hourly_bunching_stats (route_id);
+
+create index if not exists route_hourly_bunching_stats_filter_idx
+  on route_hourly_bunching_stats (route_id, service_id, hour_of_day);
+
 -- Job state for incremental processing
 create table if not exists job_state (
   id text primary key,
   watermark timestamptz
+);
+
+-- Direction label lookup: pre-computed from get_route_directions(), published to serving DB
+create table if not exists route_direction_labels (
+  route_id     text not null,
+  direction_id int not null,
+  dir          text not null,
+  primary key (route_id, direction_id)
 );

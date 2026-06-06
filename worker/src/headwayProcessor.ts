@@ -1,5 +1,5 @@
 import { fileURLToPath } from 'node:url'
-import { query } from './db'
+import { query, closePool } from './db'
 
 const getWatermark = async () => {
 	const result = await query<{ watermark: Date | null }>(
@@ -17,7 +17,7 @@ const setWatermark = async (watermark: Date) => {
 	)
 }
 
-export const _buildHeadwaysInsertSql = () => `
+export const HEADWAYS_INSERT_SQL = `
     with deduped as (
       select route_id, direction_id, stop_id, vid, arrival_time
       from (
@@ -87,15 +87,21 @@ export const _buildHeadwaysInsertSql = () => `
     on conflict do nothing
   `
 
+// Kept for backwards-compat with any existing tests that import this name.
+export const _buildHeadwaysInsertSql = () => HEADWAYS_INSERT_SQL
+
 export const runHeadways = async () => {
 	const watermark = await getWatermark()
 
-	await query(_buildHeadwaysInsertSql(), [watermark])
-
+	// Capture the ceiling BEFORE processing so new rows that land during the
+	// insert do not advance the watermark past unprocessed data.
 	const maxResult = await query<{ max_time: Date | null }>(
 		`select max(arrival_time) as max_time from stop_arrivals`
 	)
 	const maxTime = maxResult.rows[0]?.max_time ?? null
+
+	await query(HEADWAYS_INSERT_SQL, [watermark])
+
 	if (maxTime) {
 		await setWatermark(maxTime)
 	}
@@ -103,12 +109,14 @@ export const runHeadways = async () => {
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
 	runHeadways()
-		.then(() => {
+		.then(async () => {
 			console.log('Headways processed')
+			await closePool()
 			process.exit(0)
 		})
-		.catch((error) => {
+		.catch(async (error) => {
 			console.error('Headways processing failed', error)
+			await closePool()
 			process.exit(1)
 		})
 }

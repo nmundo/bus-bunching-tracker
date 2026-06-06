@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { BucketStat } from '$lib/types/frontend'
 
-	let { data = [] }: { data?: BucketStat[] } = $props()
+	let { data = [], title = 'Bunching rate by hour of day' }: { data?: BucketStat[]; title?: string } = $props()
 
 	const orderedData = $derived.by(() => [...data].sort((a, b) => a.hour_of_day - b.hour_of_day))
 	const maxRate = $derived.by(() => {
@@ -54,7 +54,7 @@
 	<div class="section-head">
 		<div>
 			<p class="meta-line">Trend by hour</p>
-			<h3>Bunching rate by hour of day</h3>
+			<h3>{title}</h3>
 		</div>
 		{#if worstBucket?.bunching_rate !== null && worstBucket}
 			<small class="mono">
