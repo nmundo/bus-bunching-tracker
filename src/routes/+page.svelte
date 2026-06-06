@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { browser } from '$app/environment'
+	import { fly } from 'svelte/transition'
 	import RouteTable from '$components/RouteTable.svelte'
 	import BunchingChart from '$components/BunchingChart.svelte'
 	import type { RouteStat } from '$lib/types/frontend'
@@ -230,7 +231,7 @@
 		</div>
 
 		{#if networkHourly.length > 0}
-			<div class="section-gap">
+			<div class="section-gap" transition:fly={{ y: 14, duration: 300, opacity: 0 }}>
 				<BunchingChart data={networkHourly} title="Network bunching by hour" />
 			</div>
 		{/if}

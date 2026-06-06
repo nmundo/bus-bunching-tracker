@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { browser } from '$app/environment'
+	import { fly } from 'svelte/transition'
 	import BunchingChart from '$components/BunchingChart.svelte'
 	import RouteMap from '$components/RouteMap.svelte'
 	import RouteStatsSummary from '$components/RouteStatsSummary.svelte'
@@ -125,7 +126,9 @@
 
 	<div class:stale={loading}>
 		{#if stats?.summary}
-			<RouteStatsSummary summary={{ ...stats.summary, route: stats.route }} />
+			<div in:fly={{ y: 12, duration: 280, opacity: 0 }}>
+				<RouteStatsSummary summary={{ ...stats.summary, route: stats.route }} />
+			</div>
 		{/if}
 
 		<div class="grid two section-gap">

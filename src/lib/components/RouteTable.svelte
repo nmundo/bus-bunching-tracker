@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation'
+	import { fade } from 'svelte/transition'
+	import { flip } from 'svelte/animate'
 	import type { RouteStat } from '$lib/types/frontend'
 	import { buildRouteDetailHref } from '$lib/ui/routeDetailUrl'
 	import { classifyRisk, type RiskLevel } from '$lib/ui/networkMetrics'
@@ -101,6 +103,8 @@
 				{#each routes as route (route.route_id)}
 					<tr
 						class="route-row"
+						animate:flip={{ duration: 260 }}
+						in:fade={{ duration: 180 }}
 						role="link"
 						tabindex="0"
 						onclick={() => goto(getRouteHref(route.route_id))}
