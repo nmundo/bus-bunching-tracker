@@ -190,6 +190,10 @@ header.site-header {
 	margin-top: 24px;
 }
 
+.section-gap {
+	margin-top: 24px;
+}
+
 .panel {
 	background: var(--surface-1);
 	border: 1px solid var(--border);
