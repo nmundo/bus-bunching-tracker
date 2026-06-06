@@ -85,6 +85,38 @@
 		})
 	}
 
+	const lightRasterPaint = {
+		'raster-opacity': 1,
+		'raster-saturation': -0.55,
+		'raster-brightness-min': 0.15,
+		'raster-brightness-max': 0.95,
+		'raster-contrast': 0.14
+	} as const
+
+	const darkRasterPaint = {
+		'raster-opacity': 0.85,
+		'raster-saturation': -0.95,
+		'raster-brightness-min': 0,
+		'raster-brightness-max': 0.32,
+		'raster-contrast': 0.45
+	} as const
+
+	const currentTheme = () =>
+		typeof document !== 'undefined' &&
+		document.documentElement.getAttribute('data-theme') === 'dark'
+			? 'dark'
+			: 'light'
+
+	const applyRasterTheme = () => {
+		if (!map || !map.getLayer(streetGridLayerId)) {
+			return
+		}
+		const paint = currentTheme() === 'dark' ? darkRasterPaint : lightRasterPaint
+		for (const [key, value] of Object.entries(paint)) {
+			map.setPaintProperty(streetGridLayerId, key, value)
+		}
+	}
+
 	const addStreetGridLayer = () => {
 		if (!map) {
 			return
@@ -104,13 +136,7 @@
 				id: streetGridLayerId,
 				type: 'raster',
 				source: streetGridSourceId,
-				paint: {
-					'raster-opacity': 1,
-					'raster-saturation': -0.55,
-					'raster-brightness-min': 0.15,
-					'raster-brightness-max': 0.95,
-					'raster-contrast': 0.14
-				}
+				paint: currentTheme() === 'dark' ? { ...darkRasterPaint } : { ...lightRasterPaint }
 			})
 		}
 	}
@@ -223,7 +249,14 @@
 			})
 		})
 
+		const themeObserver = new MutationObserver(() => applyRasterTheme())
+		themeObserver.observe(document.documentElement, {
+			attributes: true,
+			attributeFilter: ['data-theme']
+		})
+
 		return () => {
+			themeObserver.disconnect()
 			activePopup?.remove()
 			map?.remove()
 		}
@@ -251,15 +284,32 @@
 		gap: 12px;
 	}
 	:global(.seg-label) {
-		color: #5e6774;
+		color: var(--text-muted);
 		flex-shrink: 0;
 	}
 	:global(.seg-value) {
 		font-weight: 700;
 	}
 	:global(.seg-popup-divider) {
-		border-top: 1px solid #d6dde6;
+		border-top: 1px solid var(--border);
 		margin: 2px 0;
+	}
+	:global(:root[data-theme='dark'] .maplibregl-popup-content) {
+		background: var(--surface-1);
+		color: var(--text-strong);
+	}
+	:global(:root[data-theme='dark'] .maplibregl-popup-tip) {
+		border-top-color: var(--surface-1);
+		border-bottom-color: var(--surface-1);
+	}
+	:global(:root[data-theme='dark'] .maplibregl-popup-close-button) {
+		color: var(--text-strong);
+	}
+	:global(:root[data-theme='dark'] .maplibregl-ctrl-group) {
+		background: var(--surface-1);
+	}
+	:global(:root[data-theme='dark'] .maplibregl-ctrl-group button) {
+		filter: invert(1) hue-rotate(180deg);
 	}
 </style>
 
