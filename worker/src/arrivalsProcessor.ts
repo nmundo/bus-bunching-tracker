@@ -32,6 +32,34 @@ const directionToId = (dir: string | null) => {
 	return null
 }
 
+// Estimate the moment a vehicle actually passed a stop by linearly interpolating
+// between the two surrounding pdist samples, rather than snapping to the poll
+// timestamp (which carries up to a full poll interval of error).  Falls back to
+// the current poll timestamp when there is no usable prior sample (a vehicle
+// seen for the first time this run, the new Date(0) seed sentinel, or no forward
+// movement between samples).
+export const interpolateCrossingTime = ({
+	stopDistance,
+	prevPdist,
+	prevTimestamp,
+	currPdist,
+	currTimestamp
+}: {
+	stopDistance: number
+	prevPdist: number
+	prevTimestamp: Date
+	currPdist: number
+	currTimestamp: Date
+}): Date => {
+	const prevMs = prevTimestamp.getTime()
+	if (prevMs <= 0 || currPdist <= prevPdist) {
+		return currTimestamp
+	}
+	const rawFraction = (stopDistance - prevPdist) / (currPdist - prevPdist)
+	const fraction = Math.min(1, Math.max(0, rawFraction))
+	return new Date(prevMs + fraction * (currTimestamp.getTime() - prevMs))
+}
+
 // Use the precomputed distance_feet column instead of running
 // ST_LineLocatePoint / ST_Length on every 5-minute cycle.  Stops whose
 // distance_feet is still null (added since the last sync) are excluded; they
@@ -255,6 +283,11 @@ export const runArrivals = async () => {
 
 			const routeId = routeMap.get(row.rt)
 			const directionId = directionToId(patternDirs.get(row.pid) ?? null)
+
+			// Snapshot the prior sample before we overwrite it below; it anchors the
+			// interpolation of every stop crossed during this poll interval.
+			const prevPdist = state.lastPdist
+			const prevTimestamp = state.lastTimestamp
 			let nextIndex = state.lastStopIndex + 1
 
 			while (nextIndex < stops.length && row.pdist_feet >= stops[nextIndex].distance_feet) {
@@ -267,7 +300,13 @@ export const runArrivals = async () => {
 						vid: row.vid,
 						rt: row.rt,
 						pid: row.pid,
-						arrival_time: row.tmstmp,
+						arrival_time: interpolateCrossingTime({
+							stopDistance: nextStop.distance_feet,
+							prevPdist,
+							prevTimestamp,
+							currPdist: row.pdist_feet,
+							currTimestamp: row.tmstmp
+						}),
 						pdist_feet: row.pdist_feet
 					})
 				}

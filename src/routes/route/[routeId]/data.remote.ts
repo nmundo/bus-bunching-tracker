@@ -4,10 +4,12 @@ import type { BucketStat } from '$lib/types/frontend'
 import {
 	_buildSummaryQuery,
 	_buildHourlyBucketsQuery,
+	_buildDailyTrendQuery,
 	_buildSegmentsQuery,
 	_buildSegmentFeatureCollection,
 	type SegmentRow,
-	type SegmentFeatureProperties
+	type SegmentFeatureProperties,
+	type DailyTrendRow
 } from './queryBuilders'
 
 type RouteInput = { routeId: string; serviceId: string; bucket: string; directionId: string }
@@ -18,6 +20,8 @@ type RouteSummary = {
 	bunching_rate: number | null
 	median_scheduled_headway: number | null
 	median_actual_headway: number | null
+	excess_wait_min: number | null
+	headway_cv: number | null
 }
 
 type RouteInfo = {
@@ -30,6 +34,7 @@ type StatsResult = {
 	route: RouteInfo | null
 	summary: RouteSummary | null
 	buckets: BucketStat[]
+	dailyTrend: DailyTrendRow[]
 }
 
 export const getRouteStats = query('unchecked', async ({ routeId, serviceId, bucket, directionId }: RouteInput): Promise<StatsResult> => {
@@ -52,15 +57,22 @@ export const getRouteStats = query('unchecked', async ({ routeId, serviceId, buc
 		serviceId: serviceId || null
 	})
 
-	const [summaryResult, bucketsResult] = await Promise.all([
+	const { sql: trendSql, paramsList: trendParams } = _buildDailyTrendQuery({
+		routeId,
+		serviceId: serviceId || null
+	})
+
+	const [summaryResult, bucketsResult, trendResult] = await Promise.all([
 		dbQuery<RouteSummary>(summarySql, summaryParams),
-		dbQuery<BucketStat>(bucketsSql, hourlyParams)
+		dbQuery<BucketStat>(bucketsSql, hourlyParams),
+		dbQuery<DailyTrendRow>(trendSql, trendParams)
 	])
 
 	return {
 		route: routeResult.rows[0] ?? null,
 		summary: summaryResult.rows[0] ?? null,
-		buckets: bucketsResult.rows
+		buckets: bucketsResult.rows,
+		dailyTrend: trendResult.rows
 	}
 })
 

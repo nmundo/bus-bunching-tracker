@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
 	_buildStopArrivalsInsertSql,
-	_flattenStopArrivalRows
+	_flattenStopArrivalRows,
+	interpolateCrossingTime
 } from '../worker/src/arrivalsProcessor'
 
 describe('arrivals processor batched inserts', () => {
@@ -33,5 +34,66 @@ describe('arrivals processor batched inserts', () => {
 				}
 			])
 		).toEqual(['8', 1, '123', 'vehicle-1', '8', 'pattern-1', arrivalTime, 42])
+	})
+})
+
+describe('interpolateCrossingTime', () => {
+	const prevTimestamp = new Date('2026-01-01T12:00:00Z')
+	const currTimestamp = new Date('2026-01-01T12:00:40Z') // 40s later
+
+	it('interpolates a stop midway between the two pdist samples', () => {
+		const result = interpolateCrossingTime({
+			stopDistance: 1500,
+			prevPdist: 1000,
+			prevTimestamp,
+			currPdist: 2000,
+			currTimestamp
+		})
+		// Halfway in distance -> halfway in time (20s past prev).
+		expect(result.getTime()).toBe(new Date('2026-01-01T12:00:20Z').getTime())
+	})
+
+	it('clamps to the prior timestamp when the stop sits at/below prevPdist', () => {
+		const result = interpolateCrossingTime({
+			stopDistance: 900,
+			prevPdist: 1000,
+			prevTimestamp,
+			currPdist: 2000,
+			currTimestamp
+		})
+		expect(result.getTime()).toBe(prevTimestamp.getTime())
+	})
+
+	it('clamps to the current timestamp when the stop sits at/above currPdist', () => {
+		const result = interpolateCrossingTime({
+			stopDistance: 2500,
+			prevPdist: 1000,
+			prevTimestamp,
+			currPdist: 2000,
+			currTimestamp
+		})
+		expect(result.getTime()).toBe(currTimestamp.getTime())
+	})
+
+	it('falls back to the current timestamp when there is no usable prior sample', () => {
+		const result = interpolateCrossingTime({
+			stopDistance: 1500,
+			prevPdist: 1000,
+			prevTimestamp: new Date(0), // seed sentinel
+			currPdist: 2000,
+			currTimestamp
+		})
+		expect(result.getTime()).toBe(currTimestamp.getTime())
+	})
+
+	it('falls back to the current timestamp when the vehicle did not move forward', () => {
+		const result = interpolateCrossingTime({
+			stopDistance: 1500,
+			prevPdist: 2000,
+			prevTimestamp,
+			currPdist: 2000,
+			currTimestamp
+		})
+		expect(result.getTime()).toBe(currTimestamp.getTime())
 	})
 })

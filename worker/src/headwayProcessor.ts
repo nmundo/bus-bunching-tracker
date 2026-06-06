@@ -19,22 +19,12 @@ const setWatermark = async (watermark: Date) => {
 
 export const HEADWAYS_INSERT_SQL = `
     with deduped as (
-      select route_id, direction_id, stop_id, vid, arrival_time
-      from (
-        select
-          route_id,
-          direction_id,
-          stop_id,
-          vid,
-          arrival_time,
-          row_number() over (
-            partition by route_id, direction_id, stop_id, arrival_time
-            order by vid
-          ) as rn
-        from stop_arrivals
-        where arrival_time >= coalesce($1, '1970-01-01'::timestamptz) - interval '2 hours'
-      ) sub
-      where rn = 1
+      -- Collapse only exact duplicates.  Crucially we no longer collapse two
+      -- *different* vehicles that share an arrival_time: that case is genuine
+      -- (super-)bunching and must survive to produce a near-zero headway.
+      select distinct route_id, direction_id, stop_id, vid, arrival_time
+      from stop_arrivals
+      where arrival_time >= coalesce($1, '1970-01-01'::timestamptz) - interval '2 hours'
     ),
     ordered as (
       select
@@ -46,7 +36,9 @@ export const HEADWAYS_INSERT_SQL = `
         lag(vid) over w as prev_vid,
         lag(arrival_time) over w as prev_time
       from deduped
-      window w as (partition by route_id, direction_id, stop_id order by arrival_time)
+      -- Tie-break on vid so ordering is deterministic when two buses share a
+      -- timestamp; the pair still yields a 0-minute (super-bunched) headway.
+      window w as (partition by route_id, direction_id, stop_id order by arrival_time, vid)
     )
     insert into headways (
       route_id,
@@ -83,7 +75,8 @@ export const HEADWAYS_INSERT_SQL = `
       limit 1
     ) seg on true
     where o.prev_time is not null
-      and o.arrival_time > o.prev_time
+      and o.arrival_time >= o.prev_time
+      and o.prev_vid <> o.vid
     on conflict do nothing
   `
 

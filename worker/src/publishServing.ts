@@ -136,7 +136,7 @@ export const runPublishServing = async () => {
 
 		try {
 			// Fetch all source data from the warehouse in parallel.
-			const [routes, stops, calendar, segments, routeStats, segmentStats, hourlyStats, directionLabels, maxArrival] =
+			const [routes, stops, calendar, segments, routeStats, segmentStats, hourlyStats, dailyStats, directionLabels, maxArrival] =
 				await Promise.all([
 					warehouseClient.query<{ route_id: string; route_short_name: string; route_long_name: string }>(
 						`SELECT route_id, route_short_name, route_long_name
@@ -168,7 +168,11 @@ export const runPublishServing = async () => {
                     avg_hw_ratio,
                     median_scheduled_headway,
                     median_actual_headway,
-                    coalesce(gapped_headways, 0)      AS gapped_headways
+                    coalesce(gapped_headways, 0)      AS gapped_headways,
+                    observed_wait_min,
+                    scheduled_wait_min,
+                    excess_wait_min,
+                    headway_cv
              FROM route_bunching_stats`
 					),
 					warehouseClient.query(
@@ -195,6 +199,18 @@ export const runPublishServing = async () => {
                     computed_at,
                     window_days
              FROM route_hourly_bunching_stats`
+					),
+					warehouseClient.query(
+						`SELECT route_id,
+                    coalesce(service_id, 'unknown')   AS service_id,
+                    stat_date,
+                    total_headways,
+                    bunched_headways,
+                    bunching_rate,
+                    excess_wait_min,
+                    headway_cv,
+                    computed_at
+             FROM route_daily_bunching_stats`
 					),
 					warehouseClient.query<{ route_id: string; direction_id: number; dir: string }>(
 						`SELECT route_id, direction_id, dir FROM route_direction_labels`
@@ -279,7 +295,8 @@ export const runPublishServing = async () => {
 						'route_id', 'direction_id', 'service_id', 'time_of_day_bucket',
 						'total_headways', 'bunched_headways', 'super_bunched_headways',
 						'bunching_rate', 'avg_hw_ratio', 'median_scheduled_headway',
-						'median_actual_headway', 'gapped_headways'
+						'median_actual_headway', 'gapped_headways',
+						'observed_wait_min', 'scheduled_wait_min', 'excess_wait_min', 'headway_cv'
 					],
 					conflictColumns: ['route_id', 'direction_id', 'service_id', 'time_of_day_bucket'],
 					rows: routeStats.rows
@@ -305,6 +322,19 @@ export const runPublishServing = async () => {
 					],
 					conflictColumns: ['route_id', 'service_id', 'hour_of_day'],
 					rows: hourlyStats.rows
+				})
+
+				// Daily trend accumulates history, so upsert in place (no DELETE) to
+				// preserve days that have aged out of the 30-day enrichment window.
+				await upsertBatched(servingClient, {
+					table: 'route_daily_bunching_stats',
+					columns: [
+						'route_id', 'service_id', 'stat_date',
+						'total_headways', 'bunched_headways', 'bunching_rate',
+						'excess_wait_min', 'headway_cv', 'computed_at'
+					],
+					conflictColumns: ['route_id', 'service_id', 'stat_date'],
+					rows: dailyStats.rows
 				})
 
 				// ── Metadata ──────────────────────────────────────────────────────

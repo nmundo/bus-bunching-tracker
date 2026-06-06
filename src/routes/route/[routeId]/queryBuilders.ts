@@ -12,6 +12,14 @@ type BuildHourlyInput = {
 	serviceId: string | null
 }
 
+export type DailyTrendRow = {
+	stat_date: string
+	total_headways: number
+	bunching_rate: number | null
+	excess_wait_min: number | null
+	headway_cv: number | null
+}
+
 export type SegmentRow = {
 	segment_id: string
 	route_id: string
@@ -68,7 +76,11 @@ export const _buildSummaryQuery = ({ routeId, serviceId, bucket, directionId }: 
         ELSE NULL
       END AS bunching_rate,
       SUM(rbs.median_scheduled_headway * rbs.total_headways) / NULLIF(SUM(rbs.total_headways), 0) AS median_scheduled_headway,
-      SUM(rbs.median_actual_headway * rbs.total_headways) / NULLIF(SUM(rbs.total_headways), 0) AS median_actual_headway
+      SUM(rbs.median_actual_headway * rbs.total_headways) / NULLIF(SUM(rbs.total_headways), 0) AS median_actual_headway,
+      SUM(rbs.excess_wait_min * rbs.total_headways) FILTER (WHERE rbs.excess_wait_min IS NOT NULL)
+        / NULLIF(SUM(rbs.total_headways) FILTER (WHERE rbs.excess_wait_min IS NOT NULL), 0) AS excess_wait_min,
+      SUM(rbs.headway_cv * rbs.total_headways) FILTER (WHERE rbs.headway_cv IS NOT NULL)
+        / NULLIF(SUM(rbs.total_headways) FILTER (WHERE rbs.headway_cv IS NOT NULL), 0) AS headway_cv
     FROM route_bunching_stats AS rbs
     WHERE ${filters.join(' AND ')}
   `
@@ -106,6 +118,34 @@ export const _buildHourlyBucketsQuery = ({ routeId, serviceId }: BuildHourlyInpu
     FROM hours AS h
     LEFT JOIN hourly ON hourly.hour_of_day = h.hour_of_day
     ORDER BY h.hour_of_day
+  `
+
+	return { sql, paramsList }
+}
+
+export const _buildDailyTrendQuery = ({ routeId, serviceId }: BuildHourlyInput) => {
+	const filters: string[] = ['rds.route_id = $1']
+	const paramsList: unknown[] = [routeId]
+
+	appendServiceFilter({ serviceId, serviceIdColumn: 'rds.service_id', filters, params: paramsList })
+
+	const sql = `
+    SELECT
+      rds.stat_date::text AS stat_date,
+      SUM(rds.total_headways)::int AS total_headways,
+      CASE
+        WHEN SUM(rds.total_headways) > 0
+        THEN SUM(rds.bunched_headways)::float / SUM(rds.total_headways)
+        ELSE NULL
+      END AS bunching_rate,
+      SUM(rds.excess_wait_min * rds.total_headways) FILTER (WHERE rds.excess_wait_min IS NOT NULL)
+        / NULLIF(SUM(rds.total_headways) FILTER (WHERE rds.excess_wait_min IS NOT NULL), 0) AS excess_wait_min,
+      SUM(rds.headway_cv * rds.total_headways) FILTER (WHERE rds.headway_cv IS NOT NULL)
+        / NULLIF(SUM(rds.total_headways) FILTER (WHERE rds.headway_cv IS NOT NULL), 0) AS headway_cv
+    FROM route_daily_bunching_stats rds
+    WHERE ${filters.join(' AND ')}
+    GROUP BY rds.stat_date
+    ORDER BY rds.stat_date
   `
 
 	return { sql, paramsList }
