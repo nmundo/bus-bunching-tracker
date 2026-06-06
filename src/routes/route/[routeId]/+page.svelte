@@ -115,8 +115,9 @@
 				<span>Direction</span>
 				<select bind:value={directionId}>
 					<option value="">both directions</option>
-					<option value="0">{dirLabel('0')}</option>
-					<option value="1">{dirLabel('1')}</option>
+					{#each Object.entries(directions) as [id, label] (id)}
+						<option value={id}>{label}</option>
+					{/each}
 				</select>
 			</label>
 		</div>
@@ -127,7 +128,7 @@
 			<RouteStatsSummary summary={{ ...stats.summary, route: stats.route }} />
 		{/if}
 
-		<div class="grid two" style="margin-top: 24px">
+		<div class="grid two section-gap">
 			<div class="panel">
 				<div class="section-head">
 					<div>
@@ -188,7 +189,7 @@
 			<RouteMap segmentsGeoJson={segments} selectedTimeBucket={bucket} />
 		</div>
 
-		<div style="margin-top: 24px">
+		<div class="section-gap">
 			<BunchingChart data={stats?.buckets ?? []} title={chartTitle} />
 		</div>
 	</div>

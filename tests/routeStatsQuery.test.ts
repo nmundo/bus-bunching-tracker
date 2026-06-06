@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
 	_buildHourlyBucketsQuery,
 	_buildSummaryQuery
-} from '../src/routes/api/routes/[routeId]/stats/+server'
+} from '../src/routes/route/[routeId]/queryBuilders'
 
 describe('route stats hourly query builder', () => {
 	it('builds a 24-hour query using America/Chicago local hour extraction', () => {
@@ -18,7 +18,7 @@ describe('route stats hourly query builder', () => {
 		expect(sql).toContain('ORDER BY h.hour_of_day')
 	})
 
-	it('applies weekday service filters against he.service_id without changing param order', () => {
+	it('applies weekday service filters against rhs.service_id without changing param order', () => {
 		const { sql, paramsList } = _buildHourlyBucketsQuery({
 			routeId: '22',
 			serviceId: 'weekday'
@@ -68,8 +68,12 @@ describe('route stats summary query builder', () => {
 
 		expect(paramsList).toEqual(['22'])
 		expect(sql).toContain('SUM(rbs.total_headways)::int AS total_headways')
-		expect(sql).toContain('AVG(rbs.median_scheduled_headway) AS median_scheduled_headway')
-		expect(sql).toContain('AVG(rbs.median_actual_headway) AS median_actual_headway')
+		expect(sql).toContain(
+			'SUM(rbs.median_scheduled_headway * rbs.total_headways) / NULLIF(SUM(rbs.total_headways), 0) AS median_scheduled_headway'
+		)
+		expect(sql).toContain(
+			'SUM(rbs.median_actual_headway * rbs.total_headways) / NULLIF(SUM(rbs.total_headways), 0) AS median_actual_headway'
+		)
 		expect(sql).not.toContain('FROM headways_enriched AS he')
 		expect(sql).not.toContain('rbs.time_of_day_bucket =')
 	})

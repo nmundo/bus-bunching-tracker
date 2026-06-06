@@ -12,7 +12,6 @@
 	} from '$lib/ui/networkMetrics'
 	import {
 		applyRouteTableFilters,
-		parseSortParams,
 		sortRoutes,
 		type RouteRiskFilter,
 		type RouteSortCol,
@@ -36,8 +35,8 @@
 	let risk = $state<RouteRiskFilter>('all')
 	let minData = $state(0)
 	let loading = $state(false)
-	let sortCol = $state<RouteSortCol>('bunching_rate')
-	let sortDir = $state<RouteSortDir>('desc')
+	let sortCol = $state<RouteSortCol>(data.sortCol)
+	let sortDir = $state<RouteSortDir>(data.sortDir)
 	let dataWatermark = $state<string | null>(null)
 	let networkHourly = $state<import('$lib/types/frontend').BucketStat[]>([])
 
@@ -54,9 +53,8 @@
 		q = data.q
 		risk = data.risk
 		minData = data.minData
-		const parsed = parseSortParams(new URLSearchParams(window.location.search))
-		sortCol = parsed.sortCol
-		sortDir = parsed.sortDir
+		sortCol = data.sortCol
+		sortDir = data.sortDir
 		dataWatermark = data.watermark ?? null
 		networkHourly = data.networkHourly ?? []
 	})
@@ -231,12 +229,12 @@
 		</div>
 
 		{#if networkHourly.length > 0}
-			<div style="margin-top: 24px">
+			<div class="section-gap">
 				<BunchingChart data={networkHourly} title="Network bunching by hour" />
 			</div>
 		{/if}
 
-		<div class="panel" style="margin-top: 24px">
+		<div class="panel section-gap">
 			<div class="section-head">
 				<div>
 					<p class="meta-line">Performance ranking</p>
