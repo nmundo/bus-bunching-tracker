@@ -60,6 +60,18 @@ export const interpolateCrossingTime = ({
 	return new Date(prevMs + fraction * (currTimestamp.getTime() - prevMs))
 }
 
+// Highest stop index whose distance is at or below pdist — i.e. the last stop the
+// vehicle has already passed. A full scan (rather than a binary search) tolerates
+// non-monotonic distances from GPS or pattern-data quirks. Returns -1 only when
+// the vehicle sits before the very first stop.
+export const stopIndexForPdist = (stops: PatternStop[], pdist: number): number => {
+	let index = -1
+	for (let i = 0; i < stops.length; i++) {
+		if (stops[i].distance_feet <= pdist) index = i
+	}
+	return index
+}
+
 // Use the precomputed distance_feet column instead of running
 // ST_LineLocatePoint / ST_Length on every 5-minute cycle.  Stops whose
 // distance_feet is still null (added since the last sync) are excluded; they
@@ -149,21 +161,13 @@ const loadVehicleStates = async (
 		const stops = patternStops.get(row.pid)
 		if (!stops || stops.length === 0) continue
 
-		// Find the highest stop index whose distance is at or below the last
-		// recorded pdist.  We do a full scan rather than stopping early in case
-		// distances are non-monotonic due to GPS or pattern data quirks.
-		let lastStopIndex = -1
-		for (let i = 0; i < stops.length; i++) {
-			if (stops[i].distance_feet <= row.last_pdist) lastStopIndex = i
-		}
-
 		states.set(`${row.vid}-${row.pid}`, {
 			vid: row.vid,
 			rt: row.rt,
 			pid: row.pid,
 			lastPdist: row.last_pdist,
 			lastTimestamp: new Date(0),
-			lastStopIndex
+			lastStopIndex: stopIndexForPdist(stops, row.last_pdist)
 		})
 	}
 	return states
@@ -272,13 +276,21 @@ export const runArrivals = async () => {
 			if (!stops || stops.length === 0) continue
 
 			const stateKey = `${row.vid}-${row.pid}`
+			// First sighting this run with no seeded history: anchor at the vehicle's
+			// current position so the while loop below emits nothing this poll. Without
+			// this (lastStopIndex: -1) it would backfill every stop from index 0 up to
+			// the current pdist, all stamped with this poll's timestamp — the multi-stop
+			// timestamp-collision bug that floods stop_arrivals with phantom rows and
+			// collapses headways. Real arrivals are emitted once the vehicle advances on
+			// a subsequent poll. loadVehicleStates handles vehicles with recent history;
+			// this covers first sightings, returning vehicles, and pid changes.
 			const state = states.get(stateKey) ?? {
 				vid: row.vid,
 				rt: row.rt,
 				pid: row.pid,
 				lastPdist: row.pdist_feet,
 				lastTimestamp: row.tmstmp,
-				lastStopIndex: -1
+				lastStopIndex: stopIndexForPdist(stops, row.pdist_feet)
 			}
 
 			const routeId = routeMap.get(row.rt)
