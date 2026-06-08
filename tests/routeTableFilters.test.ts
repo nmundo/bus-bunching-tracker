@@ -13,7 +13,6 @@ const makeRoute = (overrides: Partial<RouteStat>): RouteStat => ({
 	route_long_name: 'Clark',
 	bunching_rate: null,
 	total_headways: null,
-	avg_hw_ratio: null,
 	...overrides
 })
 

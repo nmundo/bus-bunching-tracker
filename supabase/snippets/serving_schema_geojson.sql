@@ -53,8 +53,22 @@ create table if not exists route_bunching_stats (
   scheduled_wait_min double precision,
   excess_wait_min double precision,
   headway_cv double precision,
+  -- Summed sufficient statistics for exact re-aggregation (see $server/metricSql).
+  analyzable_headways int,
+  sum_actual_hw double precision,
+  sum_actual_hw_sq double precision,
+  sum_sched_hw double precision,
+  sum_sched_hw_sq double precision,
   primary key (route_id, direction_id, service_id, time_of_day_bucket)
 );
+
+-- Idempotent column adds so an existing serving DB picks up the new metric
+-- components without a full rebuild.
+alter table route_bunching_stats add column if not exists analyzable_headways int;
+alter table route_bunching_stats add column if not exists sum_actual_hw double precision;
+alter table route_bunching_stats add column if not exists sum_actual_hw_sq double precision;
+alter table route_bunching_stats add column if not exists sum_sched_hw double precision;
+alter table route_bunching_stats add column if not exists sum_sched_hw_sq double precision;
 
 create index if not exists route_bunching_stats_route_idx on route_bunching_stats (route_id);
 
@@ -93,9 +107,20 @@ create table if not exists route_daily_bunching_stats (
   bunching_rate double precision,
   excess_wait_min double precision,
   headway_cv double precision,
+  analyzable_headways int,
+  sum_actual_hw double precision,
+  sum_actual_hw_sq double precision,
+  sum_sched_hw double precision,
+  sum_sched_hw_sq double precision,
   computed_at timestamptz not null,
   primary key (route_id, service_id, stat_date)
 );
+
+alter table route_daily_bunching_stats add column if not exists analyzable_headways int;
+alter table route_daily_bunching_stats add column if not exists sum_actual_hw double precision;
+alter table route_daily_bunching_stats add column if not exists sum_actual_hw_sq double precision;
+alter table route_daily_bunching_stats add column if not exists sum_sched_hw double precision;
+alter table route_daily_bunching_stats add column if not exists sum_sched_hw_sq double precision;
 
 create index if not exists route_daily_bunching_stats_route_idx
   on route_daily_bunching_stats (route_id, stat_date);
