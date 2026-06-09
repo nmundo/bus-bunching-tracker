@@ -139,6 +139,18 @@ const loadPatternDirections = async (client: import('pg').PoolClient) => {
 // loop to re-insert arrivals for all stops from 0 to the current position.
 // The unique index on stop_arrivals provides a second line of defence, but
 // seeding prevents the spurious inserts in the first place.
+//
+// The seed window is relative to the most recent arrival already recorded, NOT
+// wall-clock now(). In live operation max(arrival_time) ≈ now() so this is
+// unchanged. But during a cold backfill/replay of historical bus_positions, the
+// data is hours-to-weeks old: anchoring on now() would find zero seeds, so at
+// every batch boundary each vehicle would be treated as first-seen, re-anchored
+// at its current position, and lose the stops it crossed since the previous
+// batch — silently under-counting arrivals and inflating headways. Keying the
+// window off the latest recorded arrival keeps consecutive replay batches
+// continuous. We also seed lastTimestamp from the actual arrival time (not the
+// epoch sentinel) so the first crossing after a boundary interpolates instead of
+// collapsing every crossed stop onto one timestamp.
 const loadVehicleStates = async (
 	client: import('pg').PoolClient,
 	patternStops: Map<string, PatternStop[]>
@@ -148,12 +160,14 @@ const loadVehicleStates = async (
 		pid: string
 		rt: string
 		last_pdist: number
+		last_time: Date
 	}>(`
-    select vid, pid, rt, max(pdist_feet) as last_pdist
+    select distinct on (vid, pid, rt)
+      vid, pid, rt, pdist_feet as last_pdist, arrival_time as last_time
     from stop_arrivals
-    where arrival_time > now() - interval '24 hours'
+    where arrival_time > (select coalesce(max(arrival_time), now()) from stop_arrivals) - interval '24 hours'
       and pdist_feet is not null
-    group by vid, pid, rt
+    order by vid, pid, rt, arrival_time desc
   `)
 
 	const states = new Map<string, BusState>()
@@ -166,7 +180,7 @@ const loadVehicleStates = async (
 			rt: row.rt,
 			pid: row.pid,
 			lastPdist: row.last_pdist,
-			lastTimestamp: new Date(0),
+			lastTimestamp: new Date(row.last_time),
 			lastStopIndex: stopIndexForPdist(stops, row.last_pdist)
 		})
 	}
