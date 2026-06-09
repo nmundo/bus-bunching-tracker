@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
 	classifyRisk,
-	computeWeightedNetworkAverage,
+	computeNetworkMetrics,
 	countHighRiskRoutes,
 	countRoutesWithData,
 	getWorstRoute
@@ -14,7 +14,6 @@ const makeRoute = (overrides: Partial<RouteStat>): RouteStat => ({
 	route_long_name: 'Example',
 	bunching_rate: null,
 	total_headways: null,
-	avg_hw_ratio: null,
 	...overrides
 })
 
@@ -28,25 +27,61 @@ describe('classifyRisk', () => {
 	})
 })
 
-describe('computeWeightedNetworkAverage', () => {
-	it('weights by total headways when available', () => {
+describe('computeNetworkMetrics', () => {
+	it('pools rates from summed counts rather than averaging per-route rates', () => {
 		const routes = [
-			makeRoute({ route_id: '8', bunching_rate: 0.3, total_headways: 300 }),
-			makeRoute({ route_id: '3', bunching_rate: 0.1, total_headways: 100 }),
-			makeRoute({ route_id: '2', bunching_rate: null, total_headways: 200 })
+			makeRoute({
+				route_id: '8',
+				total_headways: 300,
+				analyzable_headways: 300,
+				bunched_headways: 90, // 30%
+				super_bunched_headways: 30,
+				gapped_headways: 15
+			}),
+			makeRoute({
+				route_id: '3',
+				total_headways: 100,
+				analyzable_headways: 100,
+				bunched_headways: 10, // 10%
+				super_bunched_headways: 5,
+				gapped_headways: 5
+			})
 		]
 
-		expect(computeWeightedNetworkAverage(routes)).toBeCloseTo(0.25, 6)
+		const network = computeNetworkMetrics(routes)
+		// (90 + 10) / (300 + 100) = 0.25
+		expect(network.bunchingRate).toBeCloseTo(0.25, 6)
+		// (30 + 5) / (300 + 100) = 0.0875
+		expect(network.superBunchingRate).toBeCloseTo(0.0875, 6)
+		// (15 + 5) / 400 = 0.05
+		expect(network.gappingRate).toBeCloseTo(0.05, 6)
 	})
 
-	it('falls back to unweighted average when no valid weights exist', () => {
+	it('pools excess wait from Σh / Σh² (E[H²]/2E[H])', () => {
+		// Two analyzable headways of 10 min each, scheduled 10 min each.
+		// observed wait = (100 + 100) / (2 * (10 + 10)) = 5; scheduled wait = 5; excess = 0.
 		const routes = [
-			makeRoute({ route_id: '8', bunching_rate: 0.3, total_headways: null }),
-			makeRoute({ route_id: '3', bunching_rate: 0.1, total_headways: 0 }),
-			makeRoute({ route_id: '2', bunching_rate: null, total_headways: 20 })
+			makeRoute({
+				route_id: '1',
+				total_headways: 2,
+				analyzable_headways: 2,
+				sum_actual_hw: 20,
+				sum_actual_hw_sq: 200,
+				sum_sched_hw: 20,
+				sum_sched_hw_sq: 200
+			})
 		]
+		const network = computeNetworkMetrics(routes)
+		expect(network.excessWaitMin).toBeCloseTo(0, 6)
+	})
 
-		expect(computeWeightedNetworkAverage(routes)).toBeCloseTo(0.2, 6)
+	it('returns nulls when there are no analyzable headways', () => {
+		const routes = [makeRoute({ total_headways: 0, analyzable_headways: 0 })]
+		const network = computeNetworkMetrics(routes)
+		expect(network.bunchingRate).toBeNull()
+		expect(network.gappingRate).toBeNull()
+		expect(network.excessWaitMin).toBeNull()
+		expect(network.headwayCv).toBeNull()
 	})
 })
 

@@ -1,6 +1,7 @@
 import { query } from '$app/server'
 import { query as dbQuery } from '$server/db'
 import { appendServiceFilter } from '$server/serviceFilter'
+import { metricExpressions, METRIC_COMPONENT_COLUMNS } from '$server/metricSql'
 import type { RouteStat, BucketStat } from '$lib/types/frontend'
 
 type RoutesInput = { serviceId: string; bucket: string }
@@ -24,41 +25,24 @@ export const getRoutes = query('unchecked', async ({ serviceId, bucket }: Routes
 		? `WHERE ${wbFilters.join(' AND ')} AND wb2.bunching_rate IS NOT NULL`
 		: `WHERE wb2.bunching_rate IS NOT NULL`
 
+	const m = metricExpressions((c) => `SUM(rbs.${c})`)
+	// Carry the summed components through so network-level metrics can be pooled
+	// exactly downstream (see networkMetrics.ts) rather than averaging per-route values.
+	const componentSelect = METRIC_COMPONENT_COLUMNS.map(
+		(c) => `SUM(rbs.${c})::float AS ${c}`
+	).join(',\n        ')
+
 	const sql = `
     WITH agg AS (
       SELECT
         rbs.route_id,
-        SUM(rbs.total_headways)::int AS total_headways,
-        SUM(rbs.bunched_headways)::int AS bunched_headways,
-        SUM(rbs.super_bunched_headways)::int AS super_bunched_headways,
-        SUM(COALESCE(rbs.gapped_headways, 0))::int AS gapped_headways,
-        CASE
-          WHEN SUM(rbs.total_headways) > 0
-          THEN SUM(rbs.bunched_headways)::float / SUM(rbs.total_headways)
-          ELSE NULL
-        END AS bunching_rate,
-        CASE
-          WHEN SUM(rbs.total_headways) > 0
-          THEN SUM(rbs.super_bunched_headways)::float / SUM(rbs.total_headways)
-          ELSE NULL
-        END AS super_bunching_rate,
-        CASE
-          WHEN SUM(rbs.total_headways) > 0
-          THEN SUM(COALESCE(rbs.gapped_headways, 0))::float / SUM(rbs.total_headways)
-          ELSE NULL
-        END AS gapping_rate,
-        AVG(rbs.avg_hw_ratio) AS avg_hw_ratio,
-        -- EWT/CV/median are per-bucket; recombine as a headway-weighted mean,
-        -- matching how the route-detail summary already weights medians.
-        SUM(rbs.excess_wait_min * rbs.total_headways) FILTER (WHERE rbs.excess_wait_min IS NOT NULL)
-          / NULLIF(SUM(rbs.total_headways) FILTER (WHERE rbs.excess_wait_min IS NOT NULL), 0)
-          AS excess_wait_min,
-        SUM(rbs.headway_cv * rbs.total_headways) FILTER (WHERE rbs.headway_cv IS NOT NULL)
-          / NULLIF(SUM(rbs.total_headways) FILTER (WHERE rbs.headway_cv IS NOT NULL), 0)
-          AS headway_cv,
-        SUM(rbs.median_scheduled_headway * rbs.total_headways) FILTER (WHERE rbs.median_scheduled_headway IS NOT NULL)
-          / NULLIF(SUM(rbs.total_headways) FILTER (WHERE rbs.median_scheduled_headway IS NOT NULL), 0)
-          AS median_scheduled_headway
+        ${componentSelect},
+        ${m.bunching_rate} AS bunching_rate,
+        ${m.super_bunching_rate} AS super_bunching_rate,
+        ${m.gapping_rate} AS gapping_rate,
+        ${m.excess_wait_min} AS excess_wait_min,
+        ${m.headway_cv} AS headway_cv,
+        ${m.mean_scheduled_headway} AS mean_scheduled_headway
       FROM route_bunching_stats rbs
       ${aggWhere}
       GROUP BY rbs.route_id
@@ -75,15 +59,21 @@ export const getRoutes = query('unchecked', async ({ serviceId, bucket }: Routes
       r.route_id,
       r.route_short_name,
       r.route_long_name,
-      agg.total_headways,
+      agg.total_headways::int AS total_headways,
+      agg.analyzable_headways,
       agg.bunched_headways,
+      agg.super_bunched_headways,
+      agg.gapped_headways,
+      agg.sum_actual_hw,
+      agg.sum_actual_hw_sq,
+      agg.sum_sched_hw,
+      agg.sum_sched_hw_sq,
       agg.bunching_rate,
       agg.super_bunching_rate,
       agg.gapping_rate,
-      agg.avg_hw_ratio,
       agg.excess_wait_min,
       agg.headway_cv,
-      agg.median_scheduled_headway,
+      agg.mean_scheduled_headway,
       wb.worst_bucket
     FROM gtfs_routes r
     LEFT JOIN agg ON agg.route_id = r.route_id

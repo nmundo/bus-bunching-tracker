@@ -339,7 +339,11 @@ begin
     he.gapped,
     he.hw_ratio,
     he.scheduled_headway_min,
-    he.actual_headway_min
+    he.actual_headway_min,
+    -- "analyzable": has a scheduled baseline and is within the sanity cap.
+    -- MAX_ANALYZABLE_HEADWAY_MIN = 180 drops cross-service-gap / GPS-glitch
+    -- headways that would otherwise dominate variance and the wait integrals.
+    (he.scheduled_headway_min is not null and he.actual_headway_min <= 180) as analyzable
   from (
     select
       route_id, direction_id, segment_id, service_id, time_of_day_bucket,
@@ -367,7 +371,12 @@ begin
     observed_wait_min,
     scheduled_wait_min,
     excess_wait_min,
-    headway_cv
+    headway_cv,
+    analyzable_headways,
+    sum_actual_hw,
+    sum_actual_hw_sq,
+    sum_sched_hw,
+    sum_sched_hw_sq
   )
   select
     route_id,
@@ -375,27 +384,36 @@ begin
     service_id,
     time_of_day_bucket,
     count(*) as total_headways,
+    -- bunched is a strict subset of analyzable; gapped is capped to analyzable so
+    -- pathological long gaps don't count. Both share the analyzable denominator.
     count(*) filter (where bunched) as bunched_headways,
     count(*) filter (where super_bunched) as super_bunched_headways,
-    count(*) filter (where gapped) as gapped_headways,
-    avg((bunched)::int)::float as bunching_rate,
+    count(*) filter (where gapped and analyzable) as gapped_headways,
+    (count(*) filter (where bunched))::float / nullif(count(*) filter (where analyzable), 0) as bunching_rate,
     avg(hw_ratio) as avg_hw_ratio,
-    percentile_cont(0.5) within group (order by scheduled_headway_min) as median_scheduled_headway,
-    percentile_cont(0.5) within group (order by actual_headway_min) as median_actual_headway,
-    -- Mean passenger wait for random arrivals = E[H^2] / (2*E[H]).  Computed over
-    -- schedule-matched rows only, since "excess" needs a scheduled baseline.
-    sum(actual_headway_min * actual_headway_min) filter (where scheduled_headway_min is not null)
-      / nullif(2 * sum(actual_headway_min) filter (where scheduled_headway_min is not null), 0)
+    percentile_cont(0.5) within group (order by scheduled_headway_min) filter (where analyzable) as median_scheduled_headway,
+    percentile_cont(0.5) within group (order by actual_headway_min) filter (where analyzable) as median_actual_headway,
+    -- Mean passenger wait for random arrivals = E[H^2] / (2*E[H]), over analyzable
+    -- rows only since "excess" needs a scheduled baseline.
+    sum(actual_headway_min * actual_headway_min) filter (where analyzable)
+      / nullif(2 * sum(actual_headway_min) filter (where analyzable), 0)
       as observed_wait_min,
-    sum(scheduled_headway_min * scheduled_headway_min) filter (where scheduled_headway_min is not null)
-      / nullif(2 * sum(scheduled_headway_min) filter (where scheduled_headway_min is not null), 0)
+    sum(scheduled_headway_min * scheduled_headway_min) filter (where analyzable)
+      / nullif(2 * sum(scheduled_headway_min) filter (where analyzable), 0)
       as scheduled_wait_min,
-    (sum(actual_headway_min * actual_headway_min) filter (where scheduled_headway_min is not null)
-       / nullif(2 * sum(actual_headway_min) filter (where scheduled_headway_min is not null), 0))
-    - (sum(scheduled_headway_min * scheduled_headway_min) filter (where scheduled_headway_min is not null)
-       / nullif(2 * sum(scheduled_headway_min) filter (where scheduled_headway_min is not null), 0))
+    (sum(actual_headway_min * actual_headway_min) filter (where analyzable)
+       / nullif(2 * sum(actual_headway_min) filter (where analyzable), 0))
+    - (sum(scheduled_headway_min * scheduled_headway_min) filter (where analyzable)
+       / nullif(2 * sum(scheduled_headway_min) filter (where analyzable), 0))
       as excess_wait_min,
-    stddev_samp(actual_headway_min) / nullif(avg(actual_headway_min), 0) as headway_cv
+    stddev_samp(actual_headway_min) filter (where analyzable)
+      / nullif(avg(actual_headway_min) filter (where analyzable), 0) as headway_cv,
+    -- Sufficient statistics for exact re-aggregation downstream.
+    count(*) filter (where analyzable) as analyzable_headways,
+    coalesce(sum(actual_headway_min) filter (where analyzable), 0) as sum_actual_hw,
+    coalesce(sum(actual_headway_min * actual_headway_min) filter (where analyzable), 0) as sum_actual_hw_sq,
+    coalesce(sum(scheduled_headway_min) filter (where analyzable), 0) as sum_sched_hw,
+    coalesce(sum(scheduled_headway_min * scheduled_headway_min) filter (where analyzable), 0) as sum_sched_hw_sq
   from recent_headways_enriched
   group by route_id, direction_id, service_id, time_of_day_bucket;
 
@@ -464,7 +482,9 @@ begin
   insert into route_daily_bunching_stats (
     route_id, service_id, stat_date,
     total_headways, bunched_headways, bunching_rate,
-    excess_wait_min, headway_cv, computed_at
+    excess_wait_min, headway_cv,
+    analyzable_headways, sum_actual_hw, sum_actual_hw_sq, sum_sched_hw, sum_sched_hw_sq,
+    computed_at
   )
   select
     he.route_id,
@@ -472,15 +492,24 @@ begin
     v_date as stat_date,
     count(*) as total_headways,
     count(*) filter (where he.bunched) as bunched_headways,
-    avg((he.bunched)::int)::float as bunching_rate,
-    (sum(he.actual_headway_min * he.actual_headway_min) filter (where he.scheduled_headway_min is not null)
-       / nullif(2 * sum(he.actual_headway_min) filter (where he.scheduled_headway_min is not null), 0))
-    - (sum(he.scheduled_headway_min * he.scheduled_headway_min) filter (where he.scheduled_headway_min is not null)
-       / nullif(2 * sum(he.scheduled_headway_min) filter (where he.scheduled_headway_min is not null), 0))
+    (count(*) filter (where he.bunched))::float / nullif(count(*) filter (where a.analyzable), 0) as bunching_rate,
+    (sum(he.actual_headway_min * he.actual_headway_min) filter (where a.analyzable)
+       / nullif(2 * sum(he.actual_headway_min) filter (where a.analyzable), 0))
+    - (sum(he.scheduled_headway_min * he.scheduled_headway_min) filter (where a.analyzable)
+       / nullif(2 * sum(he.scheduled_headway_min) filter (where a.analyzable), 0))
       as excess_wait_min,
-    stddev_samp(he.actual_headway_min) / nullif(avg(he.actual_headway_min), 0) as headway_cv,
+    stddev_samp(he.actual_headway_min) filter (where a.analyzable)
+      / nullif(avg(he.actual_headway_min) filter (where a.analyzable), 0) as headway_cv,
+    count(*) filter (where a.analyzable) as analyzable_headways,
+    coalesce(sum(he.actual_headway_min) filter (where a.analyzable), 0) as sum_actual_hw,
+    coalesce(sum(he.actual_headway_min * he.actual_headway_min) filter (where a.analyzable), 0) as sum_actual_hw_sq,
+    coalesce(sum(he.scheduled_headway_min) filter (where a.analyzable), 0) as sum_sched_hw,
+    coalesce(sum(he.scheduled_headway_min * he.scheduled_headway_min) filter (where a.analyzable), 0) as sum_sched_hw_sq,
     now()
   from headways_enriched he
+  cross join lateral (
+    select (he.scheduled_headway_min is not null and he.actual_headway_min <= 180) as analyzable
+  ) a
   where (he.arrival_time at time zone 'America/Chicago')::date = v_date
   group by he.route_id, coalesce(he.service_id, 'unknown');
 

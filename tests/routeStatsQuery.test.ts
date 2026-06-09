@@ -68,12 +68,18 @@ describe('route stats summary query builder', () => {
 
 		expect(paramsList).toEqual(['22'])
 		expect(sql).toContain('SUM(rbs.total_headways)::int AS total_headways')
+		// Means and rates are computed from summed sufficient statistics, not by
+		// averaging finished per-bucket values.
 		expect(sql).toContain(
-			'SUM(rbs.median_scheduled_headway * rbs.total_headways) / NULLIF(SUM(rbs.total_headways), 0) AS median_scheduled_headway'
+			'SUM(rbs.bunched_headways)::float / NULLIF(SUM(rbs.analyzable_headways), 0) AS bunching_rate'
 		)
 		expect(sql).toContain(
-			'SUM(rbs.median_actual_headway * rbs.total_headways) / NULLIF(SUM(rbs.total_headways), 0) AS median_actual_headway'
+			'SUM(rbs.sum_sched_hw) / NULLIF(SUM(rbs.analyzable_headways), 0) AS mean_scheduled_headway'
 		)
+		expect(sql).toContain(
+			'SUM(rbs.sum_actual_hw) / NULLIF(SUM(rbs.analyzable_headways), 0) AS mean_actual_headway'
+		)
+		expect(sql).not.toContain('median_scheduled_headway * rbs.total_headways')
 		expect(sql).not.toContain('FROM headways_enriched AS he')
 		expect(sql).not.toContain('rbs.time_of_day_bucket =')
 	})

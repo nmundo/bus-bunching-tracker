@@ -2,8 +2,16 @@ import { describe, expect, it } from 'vitest'
 import {
 	_buildStopArrivalsInsertSql,
 	_flattenStopArrivalRows,
-	interpolateCrossingTime
+	interpolateCrossingTime,
+	stopIndexForPdist
 } from '../worker/src/arrivalsProcessor'
+
+const stop = (seq: number, distance_feet: number) => ({
+	seq,
+	stpid: `s${seq}`,
+	gtfs_stop_id: `g${seq}`,
+	distance_feet
+})
 
 describe('arrivals processor batched inserts', () => {
 	it('builds multi-row stop arrival inserts with positional parameters', () => {
@@ -95,5 +103,32 @@ describe('interpolateCrossingTime', () => {
 			currTimestamp
 		})
 		expect(result.getTime()).toBe(currTimestamp.getTime())
+	})
+})
+
+describe('stopIndexForPdist', () => {
+	const stops = [stop(0, 0), stop(1, 1000), stop(2, 2000), stop(3, 3000)]
+
+	it('returns the index of the last stop already passed', () => {
+		// Anchors a first-seen vehicle so the while loop emits no arrivals this poll;
+		// without it the vehicle would backfill stops 0..current at one timestamp.
+		expect(stopIndexForPdist(stops, 2500)).toBe(2)
+	})
+
+	it('includes a stop sitting exactly at the current pdist', () => {
+		expect(stopIndexForPdist(stops, 2000)).toBe(2)
+	})
+
+	it('returns -1 only when the vehicle is before the first stop', () => {
+		expect(stopIndexForPdist(stops, -1)).toBe(-1)
+	})
+
+	it('returns the final index when the vehicle is at or past the last stop', () => {
+		expect(stopIndexForPdist(stops, 9999)).toBe(3)
+	})
+
+	it('tolerates non-monotonic distances by scanning the whole pattern', () => {
+		const wavy = [stop(0, 0), stop(1, 3000), stop(2, 1000), stop(3, 2000)]
+		expect(stopIndexForPdist(wavy, 2500)).toBe(3)
 	})
 })

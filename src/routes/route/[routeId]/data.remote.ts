@@ -18,8 +18,8 @@ type RouteSummary = {
 	total_headways: number | null
 	bunched_headways: number | null
 	bunching_rate: number | null
-	median_scheduled_headway: number | null
-	median_actual_headway: number | null
+	mean_scheduled_headway: number | null
+	mean_actual_headway: number | null
 	excess_wait_min: number | null
 	headway_cv: number | null
 }

@@ -143,8 +143,10 @@
 					<div class="glossary-row">
 						<dt>Bunching rate</dt>
 						<dd>
-							The share of observed headways where a bus arrived less than 25% of the route's
-							scheduled headway after the previous bus — i.e. two buses running nearly back-to-back.
+							The share of scheduled-service headways where a bus arrived less than 25% of the
+							route's scheduled headway after the previous bus — i.e. two buses running nearly
+							back-to-back. Headways with no matching schedule (e.g. overnight) are excluded from
+							the denominator so they don't dilute the rate.
 						</dd>
 					</div>
 					<div class="glossary-row">
@@ -157,8 +159,8 @@
 					<div class="glossary-row">
 						<dt>Gapping rate</dt>
 						<dd>
-							The share of observed headways that exceed 175% of the scheduled headway — long gaps
-							where passengers are left waiting much longer than expected.
+							The share of scheduled-service headways that exceed 175% of the scheduled headway —
+							long gaps where passengers are left waiting much longer than expected.
 						</dd>
 					</div>
 					<div class="glossary-row">
@@ -167,7 +169,8 @@
 							The extra time the average rider waits because buses are unevenly spaced, in minutes.
 							For a turn-up-and-go service the mean wait is E[H²] / (2·E[H]), so bunching inflates
 							waiting even when the average headway is on schedule. Shown only for frequent routes,
-							where riders arrive without consulting a timetable.
+							where riders arrive without consulting a timetable, and floored at 0 (a route more
+							regular than its schedule has no excess wait).
 						</dd>
 					</div>
 					<div class="glossary-row">
@@ -181,8 +184,9 @@
 					<div class="glossary-row">
 						<dt>Network avg bunching</dt>
 						<dd>
-							The bunching rate averaged across all active routes, weighted by the number of headway
-							observations on each route so busier routes carry more influence.
+							The bunching rate pooled across all active routes — every route's bunched and
+							scheduled-service headways are summed and the rate computed once, so busier routes
+							naturally carry more influence.
 						</dd>
 					</div>
 					<div class="glossary-row">
@@ -190,9 +194,9 @@
 						<dd>Routes whose bunching rate is at or above 20%.</dd>
 					</div>
 					<div class="glossary-row">
-						<dt>Median scheduled / actual headway</dt>
+						<dt>Mean scheduled / actual headway</dt>
 						<dd>
-							The midpoint planned gap vs. the midpoint observed gap between buses on a route, in
+							The average planned gap vs. the average observed gap between buses on a route, in
 							minutes. A large difference suggests the schedule is not being followed.
 						</dd>
 					</div>

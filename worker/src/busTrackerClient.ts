@@ -44,7 +44,7 @@ const buildUrl = (endpoint: string, params: Record<string, string>) => {
 	return url.toString()
 }
 
-export const busTimeRequest = async <T>(endpoint: string, params: Record<string, string>) => {
+const fetchBusTimeResponse = async <T>(endpoint: string, params: Record<string, string>) => {
 	const url = buildUrl(endpoint, params)
 	const res = await fetch(url)
 	if (!res.ok) {
@@ -62,9 +62,13 @@ export const busTimeRequest = async <T>(endpoint: string, params: Record<string,
 			status: res.status
 		})
 	}
-
 	const response = payload['bustime-response']
 	const errors = Array.isArray(response.error) ? response.error : []
+	return { response, errors, status: res.status }
+}
+
+export const busTimeRequest = async <T>(endpoint: string, params: Record<string, string>) => {
+	const { response, errors, status } = await fetchBusTimeResponse<T>(endpoint, params)
 	if (errors.length > 0) {
 		const errorMessage = errors
 			.map((error) => error.msg)
@@ -77,9 +81,23 @@ export const busTimeRequest = async <T>(endpoint: string, params: Record<string,
 				: 'CTA Bus Tracker API returned an error response',
 			endpoint,
 			details: errors,
-			status: res.status
+			status
 		})
 	}
 
 	return response as T
+}
+
+// Same as busTimeRequest but does NOT throw when the API returns per-row
+// "no data" / "no vehicle" errors alongside valid data — the CTA API
+// commonly returns both `vehicle` and `error` in a single batch when only
+// a subset of the requested routes is currently in service. Returning the
+// partial response lets callers consume the vehicles instead of discarding
+// the whole batch.
+export const busTimeRequestTolerant = async <T>(
+	endpoint: string,
+	params: Record<string, string>
+) => {
+	const { response, errors } = await fetchBusTimeResponse<T>(endpoint, params)
+	return { response: response as T, errors }
 }

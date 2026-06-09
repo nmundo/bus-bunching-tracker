@@ -1,4 +1,5 @@
 import { appendServiceFilter } from '$server/serviceFilter'
+import { metricExpressions } from '$server/metricSql'
 
 type BuildStatsInput = {
 	routeId: string
@@ -16,6 +17,16 @@ export type DailyTrendRow = {
 	stat_date: string
 	total_headways: number
 	bunching_rate: number | null
+	excess_wait_min: number | null
+	headway_cv: number | null
+}
+
+export type RouteSummaryRow = {
+	total_headways: number | null
+	bunched_headways: number | null
+	bunching_rate: number | null
+	mean_scheduled_headway: number | null
+	mean_actual_headway: number | null
 	excess_wait_min: number | null
 	headway_cv: number | null
 }
@@ -66,21 +77,17 @@ export const _buildSummaryQuery = ({ routeId, serviceId, bucket, directionId }: 
 		filters.push(`rbs.direction_id = $${paramsList.length}`)
 	}
 
+	const m = metricExpressions((c) => `SUM(rbs.${c})`)
+
 	const sql = `
     SELECT
       SUM(rbs.total_headways)::int AS total_headways,
       SUM(rbs.bunched_headways)::int AS bunched_headways,
-      CASE
-        WHEN SUM(rbs.total_headways) > 0
-        THEN SUM(rbs.bunched_headways)::float / SUM(rbs.total_headways)
-        ELSE NULL
-      END AS bunching_rate,
-      SUM(rbs.median_scheduled_headway * rbs.total_headways) / NULLIF(SUM(rbs.total_headways), 0) AS median_scheduled_headway,
-      SUM(rbs.median_actual_headway * rbs.total_headways) / NULLIF(SUM(rbs.total_headways), 0) AS median_actual_headway,
-      SUM(rbs.excess_wait_min * rbs.total_headways) FILTER (WHERE rbs.excess_wait_min IS NOT NULL)
-        / NULLIF(SUM(rbs.total_headways) FILTER (WHERE rbs.excess_wait_min IS NOT NULL), 0) AS excess_wait_min,
-      SUM(rbs.headway_cv * rbs.total_headways) FILTER (WHERE rbs.headway_cv IS NOT NULL)
-        / NULLIF(SUM(rbs.total_headways) FILTER (WHERE rbs.headway_cv IS NOT NULL), 0) AS headway_cv
+      ${m.bunching_rate} AS bunching_rate,
+      ${m.mean_scheduled_headway} AS mean_scheduled_headway,
+      ${m.mean_actual_headway} AS mean_actual_headway,
+      ${m.excess_wait_min} AS excess_wait_min,
+      ${m.headway_cv} AS headway_cv
     FROM route_bunching_stats AS rbs
     WHERE ${filters.join(' AND ')}
   `
@@ -129,19 +136,15 @@ export const _buildDailyTrendQuery = ({ routeId, serviceId }: BuildHourlyInput) 
 
 	appendServiceFilter({ serviceId, serviceIdColumn: 'rds.service_id', filters, params: paramsList })
 
+	const m = metricExpressions((c) => `SUM(rds.${c})`)
+
 	const sql = `
     SELECT
       rds.stat_date::text AS stat_date,
       SUM(rds.total_headways)::int AS total_headways,
-      CASE
-        WHEN SUM(rds.total_headways) > 0
-        THEN SUM(rds.bunched_headways)::float / SUM(rds.total_headways)
-        ELSE NULL
-      END AS bunching_rate,
-      SUM(rds.excess_wait_min * rds.total_headways) FILTER (WHERE rds.excess_wait_min IS NOT NULL)
-        / NULLIF(SUM(rds.total_headways) FILTER (WHERE rds.excess_wait_min IS NOT NULL), 0) AS excess_wait_min,
-      SUM(rds.headway_cv * rds.total_headways) FILTER (WHERE rds.headway_cv IS NOT NULL)
-        / NULLIF(SUM(rds.total_headways) FILTER (WHERE rds.headway_cv IS NOT NULL), 0) AS headway_cv
+      ${m.bunching_rate} AS bunching_rate,
+      ${m.excess_wait_min} AS excess_wait_min,
+      ${m.headway_cv} AS headway_cv
     FROM route_daily_bunching_stats rds
     WHERE ${filters.join(' AND ')}
     GROUP BY rds.stat_date

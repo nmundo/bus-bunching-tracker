@@ -5,8 +5,7 @@
 	import BunchingChart from '$components/BunchingChart.svelte'
 	import type { RouteStat } from '$lib/types/frontend'
 	import {
-		computeWeightedNetworkAverage,
-		computeWeightedRate,
+		computeNetworkMetrics,
 		countHighRiskRoutes,
 		countRoutesWithData,
 		getWorstRoute
@@ -45,8 +44,10 @@
 
 	const formatPercent = (value: number | null) =>
 		value === null ? '—' : `${(value * 100).toFixed(1)}%`
+	// Excess wait is floored at 0: a route running more regularly than its
+	// schedule yields a small negative value that reads oddly as "excess".
 	const formatMinutes = (value: number | null) =>
-		value === null ? '—' : `${value >= 0 ? '+' : ''}${value.toFixed(1)} min`
+		value === null ? '—' : `+${Math.max(0, value).toFixed(1)} min`
 	const formatBucketLabel = (value: string) => value.replace('_', ' ')
 
 	$effect(() => {
@@ -96,21 +97,18 @@
 
 	const dashboardMetrics = $derived.by(() => {
 		const worstRoute = getWorstRoute(routes)
-		const networkAverage = computeWeightedNetworkAverage(routes)
+		const network = computeNetworkMetrics(routes)
 		const highRiskCount = countHighRiskRoutes(routes)
 		const withDataCount = countRoutesWithData(routes)
-		const networkSuperBunched = computeWeightedRate(routes, 'super_bunching_rate')
-		const networkGapping = computeWeightedRate(routes, 'gapping_rate')
-		const networkExcessWait = computeWeightedRate(routes, 'excess_wait_min')
 
 		return {
 			worstRouteLabel: worstRoute?.route_short_name || worstRoute?.route_id || '—',
 			worstRouteName: worstRoute?.route_long_name ?? 'No route data',
 			worstRate: formatPercent(worstRoute?.bunching_rate ?? null),
-			networkAverage: formatPercent(networkAverage),
-			networkSuperBunched: formatPercent(networkSuperBunched),
-			networkGapping: formatPercent(networkGapping),
-			networkExcessWait: formatMinutes(networkExcessWait),
+			networkAverage: formatPercent(network.bunchingRate),
+			networkSuperBunched: formatPercent(network.superBunchingRate),
+			networkGapping: formatPercent(network.gappingRate),
+			networkExcessWait: formatMinutes(network.excessWaitMin),
 			highRiskCount,
 			withDataCount,
 			totalRoutes: routes.length

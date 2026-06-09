@@ -4,7 +4,12 @@
 	import { flip } from 'svelte/animate'
 	import type { RouteStat } from '$lib/types/frontend'
 	import { buildRouteDetailHref } from '$lib/ui/routeDetailUrl'
-	import { classifyRisk, type RiskLevel } from '$lib/ui/networkMetrics'
+	import {
+		classifyRisk,
+		confidentHeadways,
+		LOW_CONFIDENCE_HEADWAYS,
+		type RiskLevel
+	} from '$lib/ui/networkMetrics'
 	import type { RouteSortCol, RouteSortDir } from '$lib/ui/routeTableFilters'
 
 	let {
@@ -29,10 +34,13 @@
 	const EWT_FREQUENT_HEADWAY_MAX = 12
 
 	// Rates computed from very few observations are noisy; mark them so a 100%
-	// rate from 3 headways doesn't read the same as one from 300.
-	const LOW_CONFIDENCE_HEADWAYS = 30
-	const isLowConfidence = (route: RouteStat) =>
-		(route.total_headways ?? 0) > 0 && (route.total_headways ?? 0) < LOW_CONFIDENCE_HEADWAYS
+	// rate from 3 headways doesn't read the same as one from 300. Confidence is
+	// judged on the analyzable headways that actually back the rate, not the raw
+	// total (a route can have many headways but few with a schedule match).
+	const isLowConfidence = (route: RouteStat) => {
+		const n = confidentHeadways(route)
+		return n > 0 && n < LOW_CONFIDENCE_HEADWAYS
+	}
 
 	const formatPercent = (value: number | null) =>
 		value === null ? '—' : `${(value * 100).toFixed(1)}%`
@@ -41,10 +49,11 @@
 		value === null || value === undefined ? '—' : value.toFixed(2)
 	const formatExcessWait = (route: RouteStat) => {
 		const ewt = route.excess_wait_min
-		const sched = route.median_scheduled_headway
+		const sched = route.mean_scheduled_headway
 		if (ewt === null || ewt === undefined) return '—'
 		if (sched === null || sched === undefined || sched > EWT_FREQUENT_HEADWAY_MAX) return '—'
-		return `${ewt >= 0 ? '+' : ''}${ewt.toFixed(1)}`
+		// Floored at 0: negative excess wait (better than schedule) reads oddly.
+		return `+${Math.max(0, ewt).toFixed(1)}`
 	}
 	const getRiskLevel = (value: number | null): RiskLevel => classifyRisk(value)
 	const getRouteHref = (routeId: string) => buildRouteDetailHref(routeId, { serviceId, bucket })
@@ -135,7 +144,7 @@
 						class="route-row"
 						class:low-confidence={isLowConfidence(route)}
 						title={isLowConfidence(route)
-							? `Based on only ${route.total_headways} observed headways — interpret with caution.`
+							? `Based on only ${confidentHeadways(route)} schedule-matched headways — interpret with caution.`
 							: undefined}
 						animate:flip={{ duration: 260 }}
 						in:fade={{ duration: 180 }}

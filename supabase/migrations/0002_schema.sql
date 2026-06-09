@@ -303,7 +303,16 @@ create table if not exists route_bunching_stats (
   observed_wait_min double precision,
   scheduled_wait_min double precision,
   excess_wait_min double precision,
-  headway_cv double precision
+  headway_cv double precision,
+  -- Summed sufficient statistics for exact re-aggregation of the non-linear
+  -- metrics (excess wait, headway CV, mean headways). See $server/metricSql.
+  -- analyzable_headways = headways with a scheduled baseline within the sanity
+  -- cap; it is the denominator for every schedule-relative metric.
+  analyzable_headways int,
+  sum_actual_hw double precision,
+  sum_actual_hw_sq double precision,
+  sum_sched_hw double precision,
+  sum_sched_hw_sq double precision
 );
 
 create index if not exists route_bunching_stats_filter_idx
@@ -355,6 +364,12 @@ create table if not exists route_daily_bunching_stats (
   bunching_rate double precision,
   excess_wait_min double precision,
   headway_cv double precision,
+  -- Summed sufficient statistics (see route_bunching_stats / $server/metricSql).
+  analyzable_headways int,
+  sum_actual_hw double precision,
+  sum_actual_hw_sq double precision,
+  sum_sched_hw double precision,
+  sum_sched_hw_sq double precision,
   computed_at timestamptz not null default now(),
   primary key (route_id, service_id, stat_date)
 );
