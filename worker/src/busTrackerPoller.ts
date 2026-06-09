@@ -1,5 +1,6 @@
 import { fileURLToPath } from 'node:url'
-import { busTimeRequest, CtaBusTrackerError } from './busTrackerClient'
+import { busTimeRequestTolerant, CtaBusTrackerError } from './busTrackerClient'
+import type { CtaBusTrackerErrorDetail } from './busTrackerClient'
 import { query, closePool } from './db'
 import { optionalEnv } from './env'
 
@@ -14,6 +15,13 @@ export const MAX_ROUTES_PER_REQUEST = 10
 
 // Patterns only change during the nightly sync; 1 hour TTL is more than enough.
 const DEFAULT_PATTERNS_REFRESH_SEC = 3600
+
+// Schedule-aware filtering: refresh the set of "currently scheduled" routes
+// every 5 min. Windows below are wide enough that a route stays in the set
+// while any of its trips is in progress.
+const DEFAULT_SCHEDULE_REFRESH_SEC = 300
+const DEFAULT_SCHEDULE_LOOKBACK_MIN = 90
+const DEFAULT_SCHEDULE_LOOKAHEAD_MIN = 30
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -86,6 +94,10 @@ type PollerState = {
 	} | null
 	knownPatternsCache: {
 		patterns: Set<string>
+		loadedAtEpochSec: number
+	} | null
+	scheduledRoutesCache: {
+		routes: Set<string>
 		loadedAtEpochSec: number
 	} | null
 	routeActivity: Map<string, RouteActivityState>
@@ -232,20 +244,155 @@ const readPollerConfig = (): PollerConfig => {
 	}
 }
 
+// Routes whose GTFS schedule places at least one trip's first stop
+// in [now - lookback, now + lookahead] under an active service day in
+// America/Chicago. Buses for any other route would always return
+// "No data found" — skipping them eliminates wasted CTA calls and the
+// per-row errors that previously crashed the poller overnight.
+const loadScheduledRoutes = async (): Promise<Set<string>> => {
+	const lookbackMin = parsePositiveInt(
+		optionalEnv('CTA_BUS_TRACKER_SCHEDULE_LOOKBACK_MIN', String(DEFAULT_SCHEDULE_LOOKBACK_MIN)),
+		DEFAULT_SCHEDULE_LOOKBACK_MIN
+	)
+	const lookaheadMin = parsePositiveInt(
+		optionalEnv('CTA_BUS_TRACKER_SCHEDULE_LOOKAHEAD_MIN', String(DEFAULT_SCHEDULE_LOOKAHEAD_MIN)),
+		DEFAULT_SCHEDULE_LOOKAHEAD_MIN
+	)
+
+	// `bucket = 'today'` matches trips on today's service day; `'yesterday'`
+	// catches trips that started yesterday but have departure_time > 24h
+	// (GTFS overnight encoding).
+	const sql = `
+		with cfg as (
+			select
+				(now() at time zone 'America/Chicago')::date as service_today,
+				((now() at time zone 'America/Chicago')::date - 1) as service_yesterday,
+				((now() at time zone 'America/Chicago')::time)::interval as now_today,
+				((now() at time zone 'America/Chicago')::time)::interval + interval '24 hours' as now_overnight,
+				extract(dow from (now() at time zone 'America/Chicago'))::int as today_dow,
+				extract(dow from ((now() at time zone 'America/Chicago') - interval '1 day'))::int as yesterday_dow,
+				make_interval(mins => $1::int) as lookback,
+				make_interval(mins => $2::int) as lookahead
+		),
+		active_services as (
+			select c.service_id, 'today'::text as bucket
+			from gtfs_calendar c, cfg
+			where cfg.service_today between c.start_date and c.end_date
+				and (case cfg.today_dow
+					when 0 then c.sunday when 1 then c.monday when 2 then c.tuesday
+					when 3 then c.wednesday when 4 then c.thursday when 5 then c.friday
+					when 6 then c.saturday end) = 1
+				and not exists (
+					select 1 from gtfs_calendar_dates cd
+					where cd.service_id = c.service_id
+						and cd.date = cfg.service_today
+						and cd.exception_type = 2
+				)
+			union
+			select cd.service_id, 'today'::text
+			from gtfs_calendar_dates cd, cfg
+			where cd.date = cfg.service_today and cd.exception_type = 1
+			union
+			select c.service_id, 'yesterday'::text
+			from gtfs_calendar c, cfg
+			where cfg.service_yesterday between c.start_date and c.end_date
+				and (case cfg.yesterday_dow
+					when 0 then c.sunday when 1 then c.monday when 2 then c.tuesday
+					when 3 then c.wednesday when 4 then c.thursday when 5 then c.friday
+					when 6 then c.saturday end) = 1
+				and not exists (
+					select 1 from gtfs_calendar_dates cd
+					where cd.service_id = c.service_id
+						and cd.date = cfg.service_yesterday
+						and cd.exception_type = 2
+				)
+			union
+			select cd.service_id, 'yesterday'::text
+			from gtfs_calendar_dates cd, cfg
+			where cd.date = cfg.service_yesterday and cd.exception_type = 1
+		),
+		active_route_ids as (
+			select distinct t.route_id
+			from gtfs_trips t
+			join active_services s on s.service_id = t.service_id
+			join gtfs_stop_times st on st.trip_id = t.trip_id and st.stop_sequence = 1
+			cross join cfg
+			where (s.bucket = 'today'
+					and st.departure_time between cfg.now_today - cfg.lookback and cfg.now_today + cfg.lookahead)
+				or (s.bucket = 'yesterday'
+					and st.departure_time between cfg.now_overnight - cfg.lookback and cfg.now_overnight + cfg.lookahead)
+			union
+			select distinct t.route_id
+			from gtfs_trips t
+			join active_services s on s.service_id = t.service_id
+			join gtfs_frequencies f on f.trip_id = t.trip_id
+			cross join cfg
+			where (s.bucket = 'today'
+					and cfg.now_today - cfg.lookback <= f.end_time
+					and cfg.now_today + cfg.lookahead >= f.start_time)
+				or (s.bucket = 'yesterday'
+					and cfg.now_overnight - cfg.lookback <= f.end_time
+					and cfg.now_overnight + cfg.lookahead >= f.start_time)
+		)
+		select distinct rm.rt
+		from route_map rm
+		join active_route_ids a on a.route_id = rm.gtfs_route_id
+	`
+	const result = await query<{ rt: string }>(sql, [lookbackMin, lookaheadMin])
+	return new Set(result.rows.map((row) => row.rt).filter(Boolean))
+}
+
+const getScheduledRoutes = async (
+	state: PollerState,
+	nowEpochSec: number
+): Promise<Set<string> | null> => {
+	if (optionalEnv('CTA_BUS_TRACKER_SCHEDULE_FILTER', '1') === '0') return null
+
+	const stale =
+		!state.scheduledRoutesCache ||
+		nowEpochSec - state.scheduledRoutesCache.loadedAtEpochSec >= DEFAULT_SCHEDULE_REFRESH_SEC
+
+	if (stale) {
+		try {
+			const routes = await loadScheduledRoutes()
+			state.scheduledRoutesCache = { routes, loadedAtEpochSec: nowEpochSec }
+		} catch (error) {
+			// If the schedule query fails (e.g. missing GTFS data), don't kill
+			// the poller — just fall back to the unfiltered universe.
+			console.warn(
+				'Scheduled-routes query failed; falling back to unfiltered route universe',
+				toError(error).message
+			)
+			return null
+		}
+	}
+
+	return state.scheduledRoutesCache?.routes ?? null
+}
+
 const getRouteUniverse = async (state: PollerState, config: PollerConfig, nowEpochSec: number) => {
 	const envRoutes = parseEnvRoutes()
-	if (envRoutes.length) {
-		return unique(envRoutes).sort()
-	}
+	const baseRoutes = envRoutes.length
+		? unique(envRoutes).sort()
+		: await (async () => {
+				const shouldRefresh =
+					!state.routeCache ||
+					nowEpochSec - state.routeCache.loadedAtEpochSec >= config.routeRefreshSec
+				if (shouldRefresh) {
+					const routes = await loadRoutesFromDb()
+					state.routeCache = { routes, loadedAtEpochSec: nowEpochSec }
+				}
+				return state.routeCache?.routes ?? []
+			})()
 
-	const shouldRefresh =
-		!state.routeCache || nowEpochSec - state.routeCache.loadedAtEpochSec >= config.routeRefreshSec
-	if (shouldRefresh) {
-		const routes = await loadRoutesFromDb()
-		state.routeCache = { routes, loadedAtEpochSec: nowEpochSec }
-	}
-
-	return state.routeCache?.routes ?? []
+	const scheduled = await getScheduledRoutes(state, nowEpochSec)
+	if (!scheduled) return baseRoutes
+	const filtered = baseRoutes.filter((rt) => scheduled.has(rt))
+	// If the filter would zero us out (e.g. GTFS data not yet imported, or
+	// every route happens to be off-schedule right now), trust the schedule —
+	// returning [] makes the cycle a no-op, which is the desired overnight
+	// behavior.
+	return filtered
 }
 
 const pruneRouteActivity = (
@@ -314,21 +461,55 @@ export const buildPollPlan = ({
 	}
 }
 
-// The CTA API returns an `error` element with this message when no buses are
-// currently running on the requested routes (e.g. overnight / off-peak gap).
-// This is a valid empty result, not a real failure — do not count it against
-// the consecutive-failure budget or it will crash the poller every night.
-export const isNoVehicleError = (err: CtaBusTrackerError) =>
-	err.message.toLowerCase().includes('no vehicle')
+// The CTA API uses several phrasings for "this route has no service right
+// now" — all are valid empty results, not real failures, and must not count
+// against the consecutive-failure budget or the poller crashes every night.
+const NO_DATA_PHRASES = ['no vehicle', 'no data found', 'no service scheduled']
+
+export const isNoVehicleMessage = (message: string) => {
+	const lower = message.toLowerCase()
+	return NO_DATA_PHRASES.some((phrase) => lower.includes(phrase))
+}
+
+export const isNoVehicleError = (err: CtaBusTrackerError) => isNoVehicleMessage(err.message)
+
+const isAllNoVehicleErrors = (errors: CtaBusTrackerErrorDetail[]) =>
+	errors.length > 0 &&
+	errors.every((e) => typeof e.msg === 'string' && isNoVehicleMessage(e.msg))
 
 const runVehicleBatch = async (routes: string[]): Promise<BatchResult> => {
 	try {
-		const response = await busTimeRequest<VehiclesResponse>('getvehicles', { rt: routes.join(',') })
+		const { response, errors } = await busTimeRequestTolerant<VehiclesResponse>('getvehicles', {
+			rt: routes.join(',')
+		})
 		const vehicles = response.vehicle ?? response.vehicles ?? []
-		return { routes, vehicles, vehiclesCount: vehicles.length }
+
+		// If we got vehicles, the batch is a success even if some routes also
+		// reported "no data" — those are per-route status messages, not batch
+		// failures. If we got no vehicles but every error is a no-data error,
+		// treat it as an empty (not failed) batch.
+		if (vehicles.length > 0 || errors.length === 0 || isAllNoVehicleErrors(errors)) {
+			return { routes, vehicles, vehiclesCount: vehicles.length }
+		}
+
+		const errorMessage = errors
+			.map((e) => e.msg)
+			.filter((m): m is string => typeof m === 'string' && m.trim().length > 0)
+			.join('; ')
+		return {
+			routes,
+			vehicles: [],
+			vehiclesCount: 0,
+			error: new CtaBusTrackerError({
+				message: errorMessage
+					? `CTA Bus Tracker API error: ${errorMessage}`
+					: 'CTA Bus Tracker API returned an error response',
+				endpoint: 'getvehicles',
+				details: errors
+			})
+		}
 	} catch (error) {
 		if (error instanceof CtaBusTrackerError && isNoVehicleError(error)) {
-			// No buses on these routes right now — treat as empty, not a failure.
 			return { routes, vehicles: [], vehiclesCount: 0 }
 		}
 		return { routes, vehicles: [], vehiclesCount: 0, error: toError(error) }
@@ -363,6 +544,7 @@ const logPollCycle = (metrics: PollCycleMetrics, config: PollerConfig) => {
 export const createPollerState = (): PollerState => ({
 	routeCache: null,
 	knownPatternsCache: null,
+	scheduledRoutesCache: null,
 	routeActivity: new Map<string, RouteActivityState>(),
 	cycleIndex: 0
 })
@@ -380,6 +562,21 @@ export const pollOnce = async (state: PollerState, config: PollerConfig) => {
 		lowTierCycleMultiplier: config.lowTierCycleMultiplier,
 		cycleIndex: state.cycleIndex
 	})
+
+	if (plan.allRoutesThisCycle.length === 0) {
+		// Nothing scheduled — no API calls, no failure.
+		const metrics: PollCycleMetrics = {
+			routesUniverseCount: routes.length,
+			fastRoutesCount: 0,
+			slowRoutesPolledCount: 0,
+			callsMade: 0,
+			failedBatches: 0,
+			successfulBatches: 0,
+			vehiclesReceived: 0
+		}
+		logPollCycle(metrics, config)
+		return metrics
+	}
 
 	const batches = chunkRoutes(plan.allRoutesThisCycle, config.batchSize)
 	const batchResults: BatchResult[] = []
