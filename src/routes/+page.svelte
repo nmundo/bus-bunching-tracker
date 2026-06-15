@@ -166,7 +166,6 @@
 		return () => clearInterval(interval)
 	})
 
-
 	const refresh = async () => {
 		loading = true
 		const rq = getRoutes({ serviceId, bucket })
@@ -189,7 +188,7 @@
 		<div class="controls-row">
 			<label class="control-field">
 				<span>Service type</span>
-				<select bind:value={serviceId}>
+				<select bind:value={serviceId} onchange={refresh}>
 					<option value="">all services</option>
 					<option value="weekday">weekday</option>
 					<option value="saturday">saturday</option>
@@ -198,13 +197,12 @@
 			</label>
 			<label class="control-field">
 				<span>Time bucket</span>
-				<select bind:value={bucket}>
+				<select bind:value={bucket} onchange={refresh}>
 					{#each timeBuckets as option (option)}
 						<option value={option}>{formatBucketLabel(option)}</option>
 					{/each}
 				</select>
 			</label>
-			<button onclick={refresh} disabled={loading} aria-label="Refresh data">&rarr;</button>
 		</div>
 	</div>
 
@@ -272,7 +270,14 @@
 					</label>
 				</div>
 			</div>
-			<RouteTable routes={visibleRoutes} {serviceId} {bucket} {sortCol} {sortDir} onSort={handleSort} />
+			<RouteTable
+				routes={visibleRoutes}
+				{serviceId}
+				{bucket}
+				{sortCol}
+				{sortDir}
+				onSort={handleSort}
+			/>
 		</div>
 	</div>
 </section>
