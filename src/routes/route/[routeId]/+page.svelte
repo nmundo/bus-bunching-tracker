@@ -98,7 +98,20 @@
 
 <section class="grid">
 	<div class="detail-toolbar">
-		<a class="back-link" href="/">← Back to network overview</a>
+		<div class="detail-toolbar-lead">
+			<a class="back-link" href="/">← Back</a>
+			{#if stats?.route}
+				<div class="toolbar-identity">
+					<h3>
+						{stats.route.route_short_name ?? 'Route'} · {stats.route.route_long_name ??
+							'Route detail'}
+					</h3>
+					<small class="mono"
+						>Total headways: {formatHeadways(stats?.summary?.total_headways)}</small
+					>
+				</div>
+			{/if}
+		</div>
 
 		<div class="controls-row detail-controls">
 			<label class="control-field">
@@ -133,7 +146,7 @@
 	<div class:stale={loading}>
 		{#if stats?.summary}
 			<div in:fly={{ y: 12, duration: 280, opacity: 0 }}>
-				<RouteStatsSummary summary={{ ...stats.summary, route: stats.route }} />
+				<RouteStatsSummary summary={stats.summary} />
 			</div>
 		{/if}
 

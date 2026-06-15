@@ -9,6 +9,7 @@
 	let { children }: LayoutProps = $props()
 
 	let theme = $state<'light' | 'dark'>('light')
+	let headerHeight = $state(0)
 	let infoOpen = $state(false)
 	let infoButtonEl = $state<HTMLButtonElement | null>(null)
 	let modalCloseEl = $state<HTMLButtonElement | null>(null)
@@ -24,6 +25,12 @@
 		} else {
 			infoButtonEl?.focus()
 		}
+	})
+
+	// Expose the sticky site header's measured height so page-level sticky bars
+	// (e.g. the route detail toolbar) can pin directly beneath it.
+	$effect(() => {
+		document.documentElement.style.setProperty('--site-header-height', `${headerHeight}px`)
 	})
 
 	onMount(() => {
@@ -67,7 +74,7 @@
 
 <svelte:window onkeydown={closeOnEsc} onpointerdown={closeOnOutsideClick} />
 
-<header class="site-header">
+<header class="site-header" bind:offsetHeight={headerHeight}>
 	<div class="brand">
 		<span>CTA performance</span>
 		<h1>Bus Bunching Tracker</h1>
