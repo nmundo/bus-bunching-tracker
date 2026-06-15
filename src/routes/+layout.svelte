@@ -1,6 +1,7 @@
 <script lang="ts">
 	import '../app.css'
 	import { page } from '$app/state'
+	import { dev } from '$app/environment'
 	import { beforeNavigate } from '$app/navigation'
 	import { fly, fade } from 'svelte/transition'
 	import { onMount, tick } from 'svelte'
@@ -101,7 +102,9 @@
 		>
 			{theme === 'dark' ? '☀' : '☾'}
 		</button>
-		<div class="badge" role="status">Development Build</div>
+		{#if dev}
+			<div class="badge" role="status">Development Build</div>
+		{/if}
 	</div>
 </header>
 

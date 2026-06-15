@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { browser } from '$app/environment'
+	import { browser, dev } from '$app/environment'
 	import { fly } from 'svelte/transition'
 	import BunchingChart from '$components/BunchingChart.svelte'
 	import RouteMap from '$components/RouteMap.svelte'
@@ -150,22 +150,24 @@
 			</div>
 		{/if}
 
-		<div class="panel section-gap trend-panel">
-			<div class="section-head">
-				<div>
-					<p class="meta-line">Daily trend</p>
-					<h3>Bunching rate over time</h3>
+		{#if dev}
+			<div class="panel section-gap trend-panel">
+				<div class="section-head">
+					<div>
+						<p class="meta-line">Daily trend</p>
+						<h3>Bunching rate over time</h3>
+					</div>
 				</div>
+				<TrendSparkline
+					points={bunchingTrend}
+					label="Bunching rate"
+					lowerIsBetter={true}
+					width={220}
+					height={44}
+					format={(v) => `${(v * 100).toFixed(1)}%`}
+				/>
 			</div>
-			<TrendSparkline
-				points={bunchingTrend}
-				label="Bunching rate"
-				lowerIsBetter={true}
-				width={220}
-				height={44}
-				format={(v) => `${(v * 100).toFixed(1)}%`}
-			/>
-		</div>
+		{/if}
 
 		<div class="grid two section-gap">
 			<div class="panel">
