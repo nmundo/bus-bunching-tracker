@@ -299,4 +299,15 @@
 		color: var(--text-muted);
 		font-size: 11px;
 	}
+
+	@media (max-width: 680px) {
+		/* Stack the toolbar vertically. With `space-between` + `flex-wrap`, the
+		   identity and the two filters interleaved and left a large empty gap on
+		   narrow screens; column layout puts the identity above full-width filters. */
+		.page-toolbar {
+			flex-direction: column;
+			align-items: stretch;
+			gap: 14px;
+		}
+	}
 </style>

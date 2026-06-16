@@ -215,6 +215,12 @@ header.site-header {
 .grid {
 	display: grid;
 	gap: 24px;
+	/* Clamp the single column to the container. The default `auto` track grows to a
+	   grid item's min-content — and the full-bleed sticky toolbars contain <select>s
+	   whose min-content is their longest option, which blew the track (and the
+	   toolbar) past the viewport on narrow screens. minmax(0, 1fr) keeps it bounded.
+	   `.grid.two` has higher specificity and keeps its own columns. */
+	grid-template-columns: minmax(0, 1fr);
 }
 
 .grid.two {
@@ -788,7 +794,10 @@ small.mono {
 
 	.controls-row {
 		display: grid;
-		grid-template-columns: 1fr;
+		/* Two short filters sit side by side instead of each taking a full row,
+		   so the filter block no longer eats half the screen. minmax(0, …) lets
+		   the columns (and the <select>s inside) shrink below their content. */
+		grid-template-columns: repeat(2, minmax(0, 1fr));
 	}
 
 	.detail-toolbar {
@@ -800,8 +809,21 @@ small.mono {
 		width: 100%;
 	}
 
+	/* The detail toolbar has three filters; let the last (Direction) span the full
+	   width on its own row rather than leaving an empty cell beside it. */
+	.detail-controls .control-field:last-child {
+		grid-column: 1 / -1;
+	}
+
 	.control-field {
 		min-width: 0;
+	}
+
+	/* The 146px min-height keeps cards uniform in the multi-column desktop grid;
+	   stacked single-column on mobile it just adds dead space, so let them size
+	   to their content. */
+	.stat-card {
+		min-height: 0;
 	}
 
 	button {
@@ -814,6 +836,30 @@ small.mono {
 
 	.chart-shell svg {
 		min-width: 920px;
+	}
+}
+
+/* Auto-hiding site header on phones: the title bar holds no live data, so it
+   slides out of view on scroll-down and returns on scroll-up (toggled from the
+   layout via data-header-hidden). Desktop is untouched — the header stays put. */
+@media (max-width: 680px) {
+	.site-header {
+		transition: transform 0.28s ease;
+	}
+
+	:root[data-header-hidden='true'] .site-header {
+		transform: translateY(-100%);
+	}
+
+	/* Slide the sticky route-detail toolbar up to the top edge in step with the
+	   header so it isn't left floating with an empty strip above it. A transform
+	   (rather than animating `top`) keeps it composited and in sync. */
+	.detail-toolbar {
+		transition: transform 0.28s ease;
+	}
+
+	:root[data-header-hidden='true'] .detail-toolbar {
+		transform: translateY(calc(-1 * var(--site-header-height, 96px)));
 	}
 }
 
