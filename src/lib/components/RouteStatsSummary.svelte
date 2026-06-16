@@ -1,15 +1,10 @@
 <script lang="ts">
 	type Summary = {
 		bunching_rate: number | null
-		total_headways: number | null
 		mean_scheduled_headway: number | null
 		mean_actual_headway: number | null
 		excess_wait_min?: number | null
 		headway_cv?: number | null
-		route: {
-			route_short_name: string | null
-			route_long_name: string | null
-		}
 	}
 
 	let { summary }: { summary: Summary } = $props()
@@ -20,7 +15,6 @@
 		value === null ? '—' : `${(value * 100).toFixed(1)}%`
 	const formatNumber = (value: number | null | undefined) =>
 		value === null || value === undefined ? '—' : value.toFixed(2)
-	const formatCount = (value: number | null) => (value === null ? '—' : value.toLocaleString())
 	const excessWaitLabel = (() => {
 		const ewt = summary.excess_wait_min
 		const sched = summary.mean_scheduled_headway
@@ -32,14 +26,6 @@
 </script>
 
 <div class="kpi-grid">
-	<div class="stat-card">
-		<p class="meta-line">Route</p>
-		<h3>{summary.route?.route_short_name ?? 'Route detail'}</h3>
-		<p>
-			{summary.route?.route_long_name ?? 'Route detail'}
-		</p>
-		<p>Total headways: {formatCount(summary.total_headways)}</p>
-	</div>
 	<div class="stat-card">
 		<p class="meta-line">Bunching rate</p>
 		<h3>{formatPercent(summary.bunching_rate)}</h3>

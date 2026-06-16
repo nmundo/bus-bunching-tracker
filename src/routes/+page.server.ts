@@ -14,5 +14,23 @@ export const load: PageServerLoad = async ({ url }) => {
 		getWatermark()
 	])
 
-	return { routes, networkHourly, watermark, serviceId, bucket, ...tableFilters, sortCol, sortDir }
+	const routesWithData = routes.filter((r) => (r.total_headways ?? 0) > 0).length
+	const meta = {
+		title: 'CTA Bus Bunching Tracker — Live Chicago bus reliability',
+		description: `Track bunching, gapping, and headway reliability across ${
+			routesWithData || routes.length
+		} CTA bus routes. See how evenly Chicago buses are spaced by route and time of day, updated continuously.`
+	}
+
+	return {
+		routes,
+		networkHourly,
+		watermark,
+		serviceId,
+		bucket,
+		...tableFilters,
+		sortCol,
+		sortDir,
+		meta
+	}
 }

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { browser } from '$app/environment'
+	import { browser, dev } from '$app/environment'
 	import { fly } from 'svelte/transition'
 	import BunchingChart from '$components/BunchingChart.svelte'
 	import RouteMap from '$components/RouteMap.svelte'
@@ -98,7 +98,20 @@
 
 <section class="grid">
 	<div class="detail-toolbar">
-		<a class="back-link" href="/">← Back to network overview</a>
+		<div class="detail-toolbar-lead">
+			<a class="back-link" href="/">← Back</a>
+			{#if stats?.route}
+				<div class="toolbar-identity">
+					<h3>
+						{stats.route.route_short_name ?? 'Route'} · {stats.route.route_long_name ??
+							'Route detail'}
+					</h3>
+					<small class="mono"
+						>Total headways: {formatHeadways(stats?.summary?.total_headways)}</small
+					>
+				</div>
+			{/if}
+		</div>
 
 		<div class="controls-row detail-controls">
 			<label class="control-field">
@@ -133,26 +146,28 @@
 	<div class:stale={loading}>
 		{#if stats?.summary}
 			<div in:fly={{ y: 12, duration: 280, opacity: 0 }}>
-				<RouteStatsSummary summary={{ ...stats.summary, route: stats.route }} />
+				<RouteStatsSummary summary={stats.summary} />
 			</div>
 		{/if}
 
-		<div class="panel section-gap trend-panel">
-			<div class="section-head">
-				<div>
-					<p class="meta-line">Daily trend</p>
-					<h3>Bunching rate over time</h3>
+		{#if dev}
+			<div class="panel section-gap trend-panel">
+				<div class="section-head">
+					<div>
+						<p class="meta-line">Daily trend</p>
+						<h3>Bunching rate over time</h3>
+					</div>
 				</div>
+				<TrendSparkline
+					points={bunchingTrend}
+					label="Bunching rate"
+					lowerIsBetter={true}
+					width={220}
+					height={44}
+					format={(v) => `${(v * 100).toFixed(1)}%`}
+				/>
 			</div>
-			<TrendSparkline
-				points={bunchingTrend}
-				label="Bunching rate"
-				lowerIsBetter={true}
-				width={220}
-				height={44}
-				format={(v) => `${(v * 100).toFixed(1)}%`}
-			/>
-		</div>
+		{/if}
 
 		<div class="grid two section-gap">
 			<div class="panel">
