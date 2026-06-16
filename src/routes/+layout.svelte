@@ -11,6 +11,7 @@
 
 	let theme = $state<'light' | 'dark'>('light')
 	let headerHeight = $state(0)
+	let headerHidden = $state(false)
 	let infoOpen = $state(false)
 	let infoButtonEl = $state<HTMLButtonElement | null>(null)
 	let modalCloseEl = $state<HTMLButtonElement | null>(null)
@@ -55,9 +56,39 @@
 		document.documentElement.style.setProperty('--site-header-height', `${headerHeight}px`)
 	})
 
+	// Drive the auto-hiding header from an attribute so the route-detail toolbar
+	// (styled in app.css) can slide up in step. The CSS only acts on small screens.
+	$effect(() => {
+		document.documentElement.setAttribute('data-header-hidden', headerHidden ? 'true' : 'false')
+	})
+
 	onMount(() => {
 		const current = document.documentElement.getAttribute('data-theme')
 		theme = current === 'dark' ? 'dark' : 'light'
+
+		// Hide the header when scrolling down, reveal it when scrolling back up —
+		// the title bar carries no live data, so this hands the screen back to the
+		// content on phones. Always show it near the very top of the page.
+		let lastY = window.scrollY
+		let ticking = false
+		const evaluate = () => {
+			ticking = false
+			const y = window.scrollY
+			if (y <= headerHeight) {
+				headerHidden = false
+			} else if (Math.abs(y - lastY) > 6) {
+				headerHidden = y > lastY
+			}
+			lastY = y
+		}
+		const onScroll = () => {
+			if (!ticking) {
+				ticking = true
+				requestAnimationFrame(evaluate)
+			}
+		}
+		window.addEventListener('scroll', onScroll, { passive: true })
+		return () => window.removeEventListener('scroll', onScroll)
 	})
 
 	function toggleTheme() {
@@ -87,6 +118,8 @@
 		const fromDetail = isDetail(from?.url.pathname ?? '')
 		const toDetail = isDetail(to?.url.pathname ?? '')
 		direction = !fromDetail && toDetail ? 1 : -1
+		// New pages land scrolled to the top, so the header should be showing.
+		headerHidden = false
 	})
 </script>
 
