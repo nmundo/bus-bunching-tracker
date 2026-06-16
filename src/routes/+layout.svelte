@@ -20,6 +20,27 @@
 	const email = $derived(emailParts.join('@'))
 	const mailtoHref = $derived(`mailto:${email}`)
 
+	// SEO metadata is centralized here so there is exactly one of each head tag.
+	// Pages provide overrides by returning a `meta` object from their load fn.
+	const DEFAULT_DESCRIPTION =
+		'Track bus bunching, gapping, and headway reliability across Chicago CTA bus routes.'
+	type PageMeta = { title?: string; description?: string; noindex?: boolean }
+	const pageMeta = $derived((page.data as { meta?: PageMeta })?.meta ?? {})
+	const metaTitle = $derived(pageMeta.title ?? 'CTA Bus Bunching Tracker')
+	const metaDescription = $derived(pageMeta.description ?? DEFAULT_DESCRIPTION)
+	const canonicalUrl = $derived(`${page.url.origin}${page.url.pathname}`)
+	const ogImage = $derived(`${page.url.origin}/og-image.png`)
+	const robots = $derived(pageMeta.noindex ? 'noindex, nofollow' : 'index, follow')
+	const jsonLd = $derived(
+		JSON.stringify({
+			'@context': 'https://schema.org',
+			'@type': 'WebSite',
+			name: 'CTA Bus Bunching Tracker',
+			url: page.url.origin,
+			description: DEFAULT_DESCRIPTION
+		})
+	)
+
 	$effect(() => {
 		if (infoOpen) {
 			tick().then(() => modalCloseEl?.focus())
@@ -70,7 +91,24 @@
 </script>
 
 <svelte:head>
-	<title>CTA Bus Bunching Tracker</title>
+	<title>{metaTitle}</title>
+	<meta name="description" content={metaDescription} />
+	<meta name="robots" content={robots} />
+	<link rel="canonical" href={canonicalUrl} />
+
+	<meta property="og:type" content="website" />
+	<meta property="og:site_name" content="CTA Bus Bunching Tracker" />
+	<meta property="og:title" content={metaTitle} />
+	<meta property="og:description" content={metaDescription} />
+	<meta property="og:url" content={canonicalUrl} />
+	<meta property="og:image" content={ogImage} />
+
+	<meta name="twitter:card" content="summary_large_image" />
+	<meta name="twitter:title" content={metaTitle} />
+	<meta name="twitter:description" content={metaDescription} />
+	<meta name="twitter:image" content={ogImage} />
+
+	{@html `<script type="application/ld+json">${jsonLd}</scr` + `ipt>`}
 </svelte:head>
 
 <svelte:window onkeydown={closeOnEsc} onpointerdown={closeOnOutsideClick} />
