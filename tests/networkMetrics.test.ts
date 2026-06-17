@@ -57,22 +57,47 @@ describe('computeNetworkMetrics', () => {
 		expect(network.gappingRate).toBeCloseTo(0.05, 6)
 	})
 
-	it('pools excess wait from Σh / Σh² (E[H²]/2E[H])', () => {
-		// Two analyzable headways of 10 min each, scheduled 10 min each.
+	it('pools excess wait from the frequent-only ewt_* sums', () => {
+		// Two frequent headways of 10 min each (≤ threshold), scheduled 10 min each.
 		// observed wait = (100 + 100) / (2 * (10 + 10)) = 5; scheduled wait = 5; excess = 0.
 		const routes = [
 			makeRoute({
 				route_id: '1',
 				total_headways: 2,
 				analyzable_headways: 2,
-				sum_actual_hw: 20,
-				sum_actual_hw_sq: 200,
-				sum_sched_hw: 20,
-				sum_sched_hw_sq: 200
+				ewt_analyzable_headways: 2,
+				ewt_sum_actual_hw: 20,
+				ewt_sum_actual_hw_sq: 200,
+				ewt_sum_sched_hw: 20,
+				ewt_sum_sched_hw_sq: 200
 			})
 		]
 		const network = computeNetworkMetrics(routes)
 		expect(network.excessWaitMin).toBeCloseTo(0, 6)
+	})
+
+	it('excludes infrequent service from excess wait but not from CV', () => {
+		// A route with plenty of analyzable headways (so CV is defined) but NO frequent
+		// service: the ewt_* sums are empty, so excess wait must be null while CV is not.
+		const routes = [
+			makeRoute({
+				route_id: '1',
+				total_headways: 4,
+				analyzable_headways: 4,
+				sum_actual_hw: 120, // four ~30-min headways, irregular → CV > 0
+				sum_actual_hw_sq: 3800,
+				sum_sched_hw: 120,
+				sum_sched_hw_sq: 3600,
+				ewt_analyzable_headways: 0,
+				ewt_sum_actual_hw: 0,
+				ewt_sum_actual_hw_sq: 0,
+				ewt_sum_sched_hw: 0,
+				ewt_sum_sched_hw_sq: 0
+			})
+		]
+		const network = computeNetworkMetrics(routes)
+		expect(network.excessWaitMin).toBeNull()
+		expect(network.headwayCv).not.toBeNull()
 	})
 
 	it('returns nulls when there are no analyzable headways', () => {

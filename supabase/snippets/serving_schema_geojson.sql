@@ -59,6 +59,13 @@ create table if not exists route_bunching_stats (
   sum_actual_hw_sq double precision,
   sum_sched_hw double precision,
   sum_sched_hw_sq double precision,
+  -- Frequent-only (scheduled headway <= EWT_FREQUENT_HEADWAY_MAX) sums backing
+  -- excess wait; CV/mean use the all-analyzable sums above.
+  ewt_analyzable_headways int,
+  ewt_sum_actual_hw double precision,
+  ewt_sum_actual_hw_sq double precision,
+  ewt_sum_sched_hw double precision,
+  ewt_sum_sched_hw_sq double precision,
   primary key (route_id, direction_id, service_id, time_of_day_bucket)
 );
 
@@ -69,6 +76,11 @@ alter table route_bunching_stats add column if not exists sum_actual_hw double p
 alter table route_bunching_stats add column if not exists sum_actual_hw_sq double precision;
 alter table route_bunching_stats add column if not exists sum_sched_hw double precision;
 alter table route_bunching_stats add column if not exists sum_sched_hw_sq double precision;
+alter table route_bunching_stats add column if not exists ewt_analyzable_headways int;
+alter table route_bunching_stats add column if not exists ewt_sum_actual_hw double precision;
+alter table route_bunching_stats add column if not exists ewt_sum_actual_hw_sq double precision;
+alter table route_bunching_stats add column if not exists ewt_sum_sched_hw double precision;
+alter table route_bunching_stats add column if not exists ewt_sum_sched_hw_sq double precision;
 
 create index if not exists route_bunching_stats_route_idx on route_bunching_stats (route_id);
 
@@ -112,6 +124,12 @@ create table if not exists route_daily_bunching_stats (
   sum_actual_hw_sq double precision,
   sum_sched_hw double precision,
   sum_sched_hw_sq double precision,
+  -- Frequent-only sums backing excess wait (see route_bunching_stats).
+  ewt_analyzable_headways int,
+  ewt_sum_actual_hw double precision,
+  ewt_sum_actual_hw_sq double precision,
+  ewt_sum_sched_hw double precision,
+  ewt_sum_sched_hw_sq double precision,
   computed_at timestamptz not null,
   primary key (route_id, service_id, stat_date)
 );
@@ -121,6 +139,11 @@ alter table route_daily_bunching_stats add column if not exists sum_actual_hw do
 alter table route_daily_bunching_stats add column if not exists sum_actual_hw_sq double precision;
 alter table route_daily_bunching_stats add column if not exists sum_sched_hw double precision;
 alter table route_daily_bunching_stats add column if not exists sum_sched_hw_sq double precision;
+alter table route_daily_bunching_stats add column if not exists ewt_analyzable_headways int;
+alter table route_daily_bunching_stats add column if not exists ewt_sum_actual_hw double precision;
+alter table route_daily_bunching_stats add column if not exists ewt_sum_actual_hw_sq double precision;
+alter table route_daily_bunching_stats add column if not exists ewt_sum_sched_hw double precision;
+alter table route_daily_bunching_stats add column if not exists ewt_sum_sched_hw_sq double precision;
 
 create index if not exists route_daily_bunching_stats_route_idx
   on route_daily_bunching_stats (route_id, stat_date);

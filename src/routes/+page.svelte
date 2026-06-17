@@ -211,7 +211,7 @@
 			<article class="stat-card">
 				<p class="meta-line">Network excess wait</p>
 				<h3>{dashboardMetrics.networkExcessWait}</h3>
-				<p>Extra minutes riders wait vs. schedule</p>
+				<p>Extra minutes riders wait vs. schedule (frequent service)</p>
 			</article>
 			<article class="stat-card">
 				<p class="meta-line">Network avg bunching</p>

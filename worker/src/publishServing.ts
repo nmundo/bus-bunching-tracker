@@ -177,7 +177,12 @@ export const runPublishServing = async () => {
                     sum_actual_hw,
                     sum_actual_hw_sq,
                     sum_sched_hw,
-                    sum_sched_hw_sq
+                    sum_sched_hw_sq,
+                    ewt_analyzable_headways,
+                    ewt_sum_actual_hw,
+                    ewt_sum_actual_hw_sq,
+                    ewt_sum_sched_hw,
+                    ewt_sum_sched_hw_sq
              FROM route_bunching_stats`
 					),
 					warehouseClient.query(
@@ -219,6 +224,11 @@ export const runPublishServing = async () => {
                     sum_actual_hw_sq,
                     sum_sched_hw,
                     sum_sched_hw_sq,
+                    ewt_analyzable_headways,
+                    ewt_sum_actual_hw,
+                    ewt_sum_actual_hw_sq,
+                    ewt_sum_sched_hw,
+                    ewt_sum_sched_hw_sq,
                     computed_at
              FROM route_daily_bunching_stats`
 					),
@@ -308,7 +318,9 @@ export const runPublishServing = async () => {
 						'median_actual_headway', 'gapped_headways',
 						'observed_wait_min', 'scheduled_wait_min', 'excess_wait_min', 'headway_cv',
 						'analyzable_headways', 'sum_actual_hw', 'sum_actual_hw_sq',
-						'sum_sched_hw', 'sum_sched_hw_sq'
+						'sum_sched_hw', 'sum_sched_hw_sq',
+						'ewt_analyzable_headways', 'ewt_sum_actual_hw', 'ewt_sum_actual_hw_sq',
+						'ewt_sum_sched_hw', 'ewt_sum_sched_hw_sq'
 					],
 					conflictColumns: ['route_id', 'direction_id', 'service_id', 'time_of_day_bucket'],
 					rows: routeStats.rows
@@ -345,7 +357,9 @@ export const runPublishServing = async () => {
 						'total_headways', 'bunched_headways', 'bunching_rate',
 						'excess_wait_min', 'headway_cv',
 						'analyzable_headways', 'sum_actual_hw', 'sum_actual_hw_sq',
-						'sum_sched_hw', 'sum_sched_hw_sq', 'computed_at'
+						'sum_sched_hw', 'sum_sched_hw_sq',
+						'ewt_analyzable_headways', 'ewt_sum_actual_hw', 'ewt_sum_actual_hw_sq',
+						'ewt_sum_sched_hw', 'ewt_sum_sched_hw_sq', 'computed_at'
 					],
 					conflictColumns: ['route_id', 'service_id', 'stat_date'],
 					rows: dailyStats.rows

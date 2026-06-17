@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { EWT_FREQUENT_HEADWAY_MAX } from '$lib/ui/networkMetrics'
+
 	type Summary = {
 		bunching_rate: number | null
 		mean_scheduled_headway: number | null
@@ -8,8 +10,6 @@
 	}
 
 	let { summary }: { summary: Summary } = $props()
-
-	const EWT_FREQUENT_HEADWAY_MAX = 12
 
 	const formatPercent = (value: number | null) =>
 		value === null ? '—' : `${(value * 100).toFixed(1)}%`

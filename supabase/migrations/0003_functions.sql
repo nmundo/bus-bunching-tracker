@@ -376,7 +376,12 @@ begin
     sum_actual_hw,
     sum_actual_hw_sq,
     sum_sched_hw,
-    sum_sched_hw_sq
+    sum_sched_hw_sq,
+    ewt_analyzable_headways,
+    ewt_sum_actual_hw,
+    ewt_sum_actual_hw_sq,
+    ewt_sum_sched_hw,
+    ewt_sum_sched_hw_sq
   )
   select
     route_id,
@@ -393,27 +398,35 @@ begin
     avg(hw_ratio) as avg_hw_ratio,
     percentile_cont(0.5) within group (order by scheduled_headway_min) filter (where analyzable) as median_scheduled_headway,
     percentile_cont(0.5) within group (order by actual_headway_min) filter (where analyzable) as median_actual_headway,
-    -- Mean passenger wait for random arrivals = E[H^2] / (2*E[H]), over analyzable
-    -- rows only since "excess" needs a scheduled baseline.
-    sum(actual_headway_min * actual_headway_min) filter (where analyzable)
-      / nullif(2 * sum(actual_headway_min) filter (where analyzable), 0)
+    -- Mean passenger wait for random arrivals = E[H^2] / (2*E[H]). Excess wait is
+    -- only meaningful for FREQUENT (turn-up-and-go) service, so the wait integrals
+    -- are taken over analyzable rows whose SCHEDULED headway is <= 12 min. The 12
+    -- must stay in sync with EWT_FREQUENT_HEADWAY_MAX in src/lib/ui/networkMetrics.ts.
+    sum(actual_headway_min * actual_headway_min) filter (where analyzable and scheduled_headway_min <= 12)
+      / nullif(2 * sum(actual_headway_min) filter (where analyzable and scheduled_headway_min <= 12), 0)
       as observed_wait_min,
-    sum(scheduled_headway_min * scheduled_headway_min) filter (where analyzable)
-      / nullif(2 * sum(scheduled_headway_min) filter (where analyzable), 0)
+    sum(scheduled_headway_min * scheduled_headway_min) filter (where analyzable and scheduled_headway_min <= 12)
+      / nullif(2 * sum(scheduled_headway_min) filter (where analyzable and scheduled_headway_min <= 12), 0)
       as scheduled_wait_min,
-    (sum(actual_headway_min * actual_headway_min) filter (where analyzable)
-       / nullif(2 * sum(actual_headway_min) filter (where analyzable), 0))
-    - (sum(scheduled_headway_min * scheduled_headway_min) filter (where analyzable)
-       / nullif(2 * sum(scheduled_headway_min) filter (where analyzable), 0))
+    (sum(actual_headway_min * actual_headway_min) filter (where analyzable and scheduled_headway_min <= 12)
+       / nullif(2 * sum(actual_headway_min) filter (where analyzable and scheduled_headway_min <= 12), 0))
+    - (sum(scheduled_headway_min * scheduled_headway_min) filter (where analyzable and scheduled_headway_min <= 12)
+       / nullif(2 * sum(scheduled_headway_min) filter (where analyzable and scheduled_headway_min <= 12), 0))
       as excess_wait_min,
     stddev_samp(actual_headway_min) filter (where analyzable)
       / nullif(avg(actual_headway_min) filter (where analyzable), 0) as headway_cv,
-    -- Sufficient statistics for exact re-aggregation downstream.
+    -- Sufficient statistics for exact re-aggregation downstream. CV/mean use the
+    -- all-analyzable sums; excess wait uses the frequent-only ewt_* sums.
     count(*) filter (where analyzable) as analyzable_headways,
     coalesce(sum(actual_headway_min) filter (where analyzable), 0) as sum_actual_hw,
     coalesce(sum(actual_headway_min * actual_headway_min) filter (where analyzable), 0) as sum_actual_hw_sq,
     coalesce(sum(scheduled_headway_min) filter (where analyzable), 0) as sum_sched_hw,
-    coalesce(sum(scheduled_headway_min * scheduled_headway_min) filter (where analyzable), 0) as sum_sched_hw_sq
+    coalesce(sum(scheduled_headway_min * scheduled_headway_min) filter (where analyzable), 0) as sum_sched_hw_sq,
+    count(*) filter (where analyzable and scheduled_headway_min <= 12) as ewt_analyzable_headways,
+    coalesce(sum(actual_headway_min) filter (where analyzable and scheduled_headway_min <= 12), 0) as ewt_sum_actual_hw,
+    coalesce(sum(actual_headway_min * actual_headway_min) filter (where analyzable and scheduled_headway_min <= 12), 0) as ewt_sum_actual_hw_sq,
+    coalesce(sum(scheduled_headway_min) filter (where analyzable and scheduled_headway_min <= 12), 0) as ewt_sum_sched_hw,
+    coalesce(sum(scheduled_headway_min * scheduled_headway_min) filter (where analyzable and scheduled_headway_min <= 12), 0) as ewt_sum_sched_hw_sq
   from recent_headways_enriched
   group by route_id, direction_id, service_id, time_of_day_bucket;
 
@@ -484,6 +497,8 @@ begin
     total_headways, bunched_headways, bunching_rate,
     excess_wait_min, headway_cv,
     analyzable_headways, sum_actual_hw, sum_actual_hw_sq, sum_sched_hw, sum_sched_hw_sq,
+    ewt_analyzable_headways, ewt_sum_actual_hw, ewt_sum_actual_hw_sq,
+    ewt_sum_sched_hw, ewt_sum_sched_hw_sq,
     computed_at
   )
   select
@@ -493,10 +508,11 @@ begin
     count(*) as total_headways,
     count(*) filter (where he.bunched) as bunched_headways,
     (count(*) filter (where he.bunched))::float / nullif(count(*) filter (where a.analyzable), 0) as bunching_rate,
-    (sum(he.actual_headway_min * he.actual_headway_min) filter (where a.analyzable)
-       / nullif(2 * sum(he.actual_headway_min) filter (where a.analyzable), 0))
-    - (sum(he.scheduled_headway_min * he.scheduled_headway_min) filter (where a.analyzable)
-       / nullif(2 * sum(he.scheduled_headway_min) filter (where a.analyzable), 0))
+    -- Excess wait over the frequent subset only (a.ewt); see refresh_bunching_stats.
+    (sum(he.actual_headway_min * he.actual_headway_min) filter (where a.ewt)
+       / nullif(2 * sum(he.actual_headway_min) filter (where a.ewt), 0))
+    - (sum(he.scheduled_headway_min * he.scheduled_headway_min) filter (where a.ewt)
+       / nullif(2 * sum(he.scheduled_headway_min) filter (where a.ewt), 0))
       as excess_wait_min,
     stddev_samp(he.actual_headway_min) filter (where a.analyzable)
       / nullif(avg(he.actual_headway_min) filter (where a.analyzable), 0) as headway_cv,
@@ -505,10 +521,20 @@ begin
     coalesce(sum(he.actual_headway_min * he.actual_headway_min) filter (where a.analyzable), 0) as sum_actual_hw_sq,
     coalesce(sum(he.scheduled_headway_min) filter (where a.analyzable), 0) as sum_sched_hw,
     coalesce(sum(he.scheduled_headway_min * he.scheduled_headway_min) filter (where a.analyzable), 0) as sum_sched_hw_sq,
+    count(*) filter (where a.ewt) as ewt_analyzable_headways,
+    coalesce(sum(he.actual_headway_min) filter (where a.ewt), 0) as ewt_sum_actual_hw,
+    coalesce(sum(he.actual_headway_min * he.actual_headway_min) filter (where a.ewt), 0) as ewt_sum_actual_hw_sq,
+    coalesce(sum(he.scheduled_headway_min) filter (where a.ewt), 0) as ewt_sum_sched_hw,
+    coalesce(sum(he.scheduled_headway_min * he.scheduled_headway_min) filter (where a.ewt), 0) as ewt_sum_sched_hw_sq,
     now()
   from headways_enriched he
   cross join lateral (
-    select (he.scheduled_headway_min is not null and he.actual_headway_min <= 180) as analyzable
+    select
+      (he.scheduled_headway_min is not null and he.actual_headway_min <= 180) as analyzable,
+      -- frequent subset for excess wait; 12 must match EWT_FREQUENT_HEADWAY_MAX
+      -- in src/lib/ui/networkMetrics.ts.
+      (he.scheduled_headway_min is not null and he.actual_headway_min <= 180
+         and he.scheduled_headway_min <= 12) as ewt
   ) a
   where (he.arrival_time at time zone 'America/Chicago')::date = v_date
   group by he.route_id, coalesce(he.service_id, 'unknown');

@@ -17,6 +17,12 @@
  *   bunched_headways / gapped_headways / super_bunched_headways — event counts
  *   sum_actual_hw / sum_actual_hw_sq — Σh and Σh² over analyzable rows
  *   sum_sched_hw  / sum_sched_hw_sq  — ΣH and ΣH² over analyzable rows
+ *   ewt_analyzable_headways, ewt_sum_actual_hw / _sq, ewt_sum_sched_hw / _sq —
+ *                           the same sums but restricted to FREQUENT service
+ *                           (scheduled headway ≤ EWT_FREQUENT_HEADWAY_MAX). Excess
+ *                           wait is only meaningful for turn-up-and-go service, so
+ *                           it is computed from these rather than the all-analyzable
+ *                           sums (which still back CV and the mean headways).
  *
  * `agg` adapts the component column to the surrounding query: pass
  * `c => `SUM(t.${c})`` when grouping, or `c => `t.${c}`` to read a single row.
@@ -32,11 +38,18 @@ export const metricExpressions = (agg: (column: string) => string) => {
 	const sumSched = agg('sum_sched_hw')
 	const sumSchedSq = agg('sum_sched_hw_sq')
 
+	// Excess-wait sums are restricted to frequent service upstream; the wait formula
+	// is only valid for turn-up-and-go arrivals (see the ewt_* note above).
+	const ewtSumActual = agg('ewt_sum_actual_hw')
+	const ewtSumActualSq = agg('ewt_sum_actual_hw_sq')
+	const ewtSumSched = agg('ewt_sum_sched_hw')
+	const ewtSumSchedSq = agg('ewt_sum_sched_hw_sq')
+
 	// Mean rider wait for random (turn-up-and-go) arrivals = E[H²] / (2·E[H]),
 	// which equals Σh² / (2·Σh). Excess wait is the actual minus the scheduled
-	// baseline computed the same way over the same rows.
-	const observedWait = `${sumActualSq} / NULLIF(2 * ${sumActual}, 0)`
-	const scheduledWait = `${sumSchedSq} / NULLIF(2 * ${sumSched}, 0)`
+	// baseline computed the same way over the same rows — over the frequent subset.
+	const observedWait = `${ewtSumActualSq} / NULLIF(2 * ${ewtSumActual}, 0)`
+	const scheduledWait = `${ewtSumSchedSq} / NULLIF(2 * ${ewtSumSched}, 0)`
 
 	// Sample standard deviation from sums: sqrt((Σx² − (Σx)²/n) / (n−1)).
 	// GREATEST(...,0) absorbs tiny negative values from float rounding.
@@ -64,5 +77,10 @@ export const METRIC_COMPONENT_COLUMNS = [
 	'sum_actual_hw',
 	'sum_actual_hw_sq',
 	'sum_sched_hw',
-	'sum_sched_hw_sq'
+	'sum_sched_hw_sq',
+	'ewt_analyzable_headways',
+	'ewt_sum_actual_hw',
+	'ewt_sum_actual_hw_sq',
+	'ewt_sum_sched_hw',
+	'ewt_sum_sched_hw_sq'
 ] as const
