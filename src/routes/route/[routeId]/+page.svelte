@@ -25,14 +25,6 @@
 	let directionId = $state(data.directionId ?? '')
 	let loading = $state(false)
 
-	$effect(() => {
-		serviceId = data.serviceId
-		bucket = data.bucket
-		directionId = data.directionId ?? ''
-		stats = data.stats
-		segments = data.segments
-	})
-
 	const directions = $derived<Record<string, string>>(data.directions ?? {})
 	const dirLabel = (id: string) => directions[id] ?? `Direction ${id}`
 

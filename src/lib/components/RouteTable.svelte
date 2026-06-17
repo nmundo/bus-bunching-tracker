@@ -7,6 +7,7 @@
 	import {
 		classifyRisk,
 		confidentHeadways,
+		EWT_FREQUENT_HEADWAY_MAX,
 		LOW_CONFIDENCE_HEADWAYS,
 		type RiskLevel
 	} from '$lib/ui/networkMetrics'
@@ -28,10 +29,9 @@
 		onSort?: (col: RouteSortCol) => void
 	} = $props()
 
-	// Excess Wait Time only models rider experience on turn-up-and-go (frequent)
-	// service; for infrequent routes riders time arrivals to the schedule, so we
-	// suppress EWT rather than show a misleading number.
-	const EWT_FREQUENT_HEADWAY_MAX = 12
+	// EWT is computed only over frequent service upstream (see EWT_FREQUENT_HEADWAY_MAX);
+	// we additionally suppress the value for routes whose mean scheduled headway exceeds
+	// the threshold, i.e. routes that aren't predominantly turn-up-and-go.
 
 	// Rates computed from very few observations are noisy; mark them so a 100%
 	// rate from 3 headways doesn't read the same as one from 300. Confidence is

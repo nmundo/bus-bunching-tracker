@@ -312,7 +312,14 @@ create table if not exists route_bunching_stats (
   sum_actual_hw double precision,
   sum_actual_hw_sq double precision,
   sum_sched_hw double precision,
-  sum_sched_hw_sq double precision
+  sum_sched_hw_sq double precision,
+  -- Frequent-only (scheduled headway <= EWT_FREQUENT_HEADWAY_MAX) sufficient
+  -- statistics backing excess wait; CV/mean use the all-analyzable sums above.
+  ewt_analyzable_headways int,
+  ewt_sum_actual_hw double precision,
+  ewt_sum_actual_hw_sq double precision,
+  ewt_sum_sched_hw double precision,
+  ewt_sum_sched_hw_sq double precision
 );
 
 create index if not exists route_bunching_stats_filter_idx
@@ -370,6 +377,12 @@ create table if not exists route_daily_bunching_stats (
   sum_actual_hw_sq double precision,
   sum_sched_hw double precision,
   sum_sched_hw_sq double precision,
+  -- Frequent-only sufficient statistics backing excess wait (see route_bunching_stats).
+  ewt_analyzable_headways int,
+  ewt_sum_actual_hw double precision,
+  ewt_sum_actual_hw_sq double precision,
+  ewt_sum_sched_hw double precision,
+  ewt_sum_sched_hw_sq double precision,
   computed_at timestamptz not null default now(),
   primary key (route_id, service_id, stat_date)
 );

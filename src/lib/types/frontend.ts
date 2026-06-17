@@ -21,6 +21,14 @@ export type RouteStat = {
 	sum_actual_hw_sq?: number | null
 	sum_sched_hw?: number | null
 	sum_sched_hw_sq?: number | null
+	// Frequent-only (scheduled headway ≤ EWT_FREQUENT_HEADWAY_MAX) sums backing
+	// excess wait; pooled separately so the network EWT isn't inflated by infrequent
+	// service. See $lib/ui/networkMetrics and $server/metricSql.
+	ewt_analyzable_headways?: number | null
+	ewt_sum_actual_hw?: number | null
+	ewt_sum_actual_hw_sq?: number | null
+	ewt_sum_sched_hw?: number | null
+	ewt_sum_sched_hw_sq?: number | null
 }
 
 export type BucketStat = {

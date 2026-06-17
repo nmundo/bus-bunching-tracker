@@ -9,6 +9,16 @@ export const MEDIUM_RISK_THRESHOLD = 0.1
 // numbers are flagged low-confidence and kept out of the headline "worst route".
 export const LOW_CONFIDENCE_HEADWAYS = 30
 
+// Excess Wait Time only models rider experience on turn-up-and-go (frequent)
+// service; on infrequent routes riders time arrivals to the schedule, so EWT is
+// both meaningless and (because a long headway implies a huge random-arrival wait)
+// distorting. EWT is therefore computed only over headways whose scheduled spacing
+// is at or below this many minutes, and suppressed in the UI for routes whose mean
+// scheduled headway exceeds it. This is the single source of truth for the display
+// gate; the warehouse functions filter the ewt_* sums with the same literal (see
+// supabase/migrations/0003_functions.sql).
+export const EWT_FREQUENT_HEADWAY_MAX = 12
+
 /** Headways backing a route's schedule-relative metrics (analyzable, with fallback). */
 export const confidentHeadways = (route: RouteStat): number =>
 	route.analyzable_headways ?? route.total_headways ?? 0
@@ -83,11 +93,17 @@ export const computeNetworkMetrics = (routes: RouteStat[]): NetworkMetrics => {
 	const gapped = sumField(routes, 'gapped_headways')
 	const sumActual = sumField(routes, 'sum_actual_hw')
 	const sumActualSq = sumField(routes, 'sum_actual_hw_sq')
-	const sumSched = sumField(routes, 'sum_sched_hw')
-	const sumSchedSq = sumField(routes, 'sum_sched_hw_sq')
 
-	const observedWait = sumActual > 0 ? sumActualSq / (2 * sumActual) : null
-	const scheduledWait = sumSched > 0 ? sumSchedSq / (2 * sumSched) : null
+	// Excess wait pools the frequent-only sums so the network number isn't inflated
+	// by infrequent routes (see EWT_FREQUENT_HEADWAY_MAX). CV/mean below keep using
+	// the all-analyzable sums above.
+	const ewtSumActual = sumField(routes, 'ewt_sum_actual_hw')
+	const ewtSumActualSq = sumField(routes, 'ewt_sum_actual_hw_sq')
+	const ewtSumSched = sumField(routes, 'ewt_sum_sched_hw')
+	const ewtSumSchedSq = sumField(routes, 'ewt_sum_sched_hw_sq')
+
+	const observedWait = ewtSumActual > 0 ? ewtSumActualSq / (2 * ewtSumActual) : null
+	const scheduledWait = ewtSumSched > 0 ? ewtSumSchedSq / (2 * ewtSumSched) : null
 
 	let headwayCv: number | null = null
 	if (analyzable >= 2 && sumActual > 0) {
