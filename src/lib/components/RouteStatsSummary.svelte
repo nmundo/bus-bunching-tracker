@@ -42,12 +42,12 @@
 		<p>Spacing irregularity — 0 is perfectly even</p>
 	</div>
 	<div class="stat-card">
-		<p class="meta-line">Mean scheduled headway (min)</p>
+		<p class="meta-line">Median scheduled headway</p>
 		<h3>{formatNumber(summary.mean_scheduled_headway)}</h3>
 		<p>Typical planned spacing between buses on this route</p>
 	</div>
 	<div class="stat-card">
-		<p class="meta-line">Mean actual headway (min)</p>
+		<p class="meta-line">Median actual headway</p>
 		<h3>{formatNumber(summary.mean_actual_headway)}</h3>
 		<p>Typical spacing between buses on this route</p>
 	</div>
