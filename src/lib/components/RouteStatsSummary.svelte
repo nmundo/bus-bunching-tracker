@@ -11,18 +11,19 @@
 
 	let { summary }: { summary: Summary } = $props()
 
-	const formatPercent = (value: number | null) =>
-		value === null ? '—' : `${(value * 100).toFixed(1)}%`
-	const formatNumber = (value: number | null | undefined) =>
-		value === null || value === undefined ? '—' : value.toFixed(2)
-	const excessWaitLabel = (() => {
+	const excessWaitLabel = $derived.by(() => {
 		const ewt = summary.excess_wait_min
 		const sched = summary.mean_scheduled_headway
 		if (ewt === null || ewt === undefined) return '—'
 		if (sched === null || sched === undefined || sched > EWT_FREQUENT_HEADWAY_MAX) return 'n/a'
 		// Floored at 0: negative excess wait (better than schedule) reads oddly.
 		return `+${Math.max(0, ewt).toFixed(1)} min`
-	})()
+	})
+
+	const formatPercent = (value: number | null) =>
+		value === null ? '—' : `${(value * 100).toFixed(1)}%`
+	const formatNumber = (value: number | null | undefined) =>
+		value === null || value === undefined ? '—' : value.toFixed(2)
 </script>
 
 <div class="kpi-grid">
