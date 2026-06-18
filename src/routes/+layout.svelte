@@ -130,7 +130,7 @@
 	<link rel="canonical" href={canonicalUrl} />
 
 	<meta property="og:type" content="website" />
-	<meta property="og:site_name" content="CTA Bus Bunching Tracker" />
+	<meta property="og:site_name" content="Chicago Bus Bunching Tracker" />
 	<meta property="og:title" content={metaTitle} />
 	<meta property="og:description" content={metaDescription} />
 	<meta property="og:url" content={canonicalUrl} />
@@ -209,8 +209,8 @@
 				</p>
 				<p>
 					Because positions are sampled rather than continuous, each arrival time is estimated by
-					interpolating between the two position reports that bracket the stop, which keeps the timing
-					accurate to within a few seconds rather than a full polling interval.
+					interpolating between the two position reports that bracket the stop, which keeps the
+					timing accurate to within a few seconds rather than a full polling interval.
 				</p>
 				<p>
 					Bunching thresholds are applied relative to each route's scheduled headway so a frequent
