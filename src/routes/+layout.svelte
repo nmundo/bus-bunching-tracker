@@ -17,7 +17,7 @@
 	let modalCloseEl = $state<HTMLButtonElement | null>(null)
 	let modalEl = $state<HTMLDivElement | null>(null)
 
-	const emailParts = ['contact', 'nathanmundo.com']
+	const emailParts = ['me', 'nathanmundo.com']
 	const email = $derived(emailParts.join('@'))
 	const mailtoHref = $derived(`mailto:${email}`)
 
