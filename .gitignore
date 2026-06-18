@@ -36,8 +36,8 @@ coverage/
 .cache/
 temp/
 instructions.md
+screenshots
 
 #supabase
 supabase/.tmp
 supabase/.temp/
-
