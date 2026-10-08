@@ -21,6 +21,7 @@
 	"dependencies": {
 		"@sveltejs/kit": "^2.6.5",
 		"@vercel/analytics": "^2.0.1",
+		"@vercel/speed-insights": "^2.0.0",
 		"csv-parse": "^5.5.6",
 		"dotenv": "^16.4.5",
 		"maplibre-gl": "^4.7.1",
